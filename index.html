@@ -1088,7 +1088,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   $('#pc-q').addEventListener('input', (e) => { q = e.target.value.trim().toLowerCase(); drawCreaTable(); });
   $('#camp-groups').addEventListener('click', (e) => { const tr = e.target.closest('tr[data-camp]'); if (!tr) return; set({ vista: 'creativos', camp: tr.dataset.camp, obj: tr.dataset.obj, mes: 0 }); dash.setLink('creativos'); $('#filtros').scrollIntoView({ block: 'start' }); });
   $('#camp-groups').addEventListener('keydown', (e) => { if (e.key === 'Enter') { const tr = e.target.closest('tr[data-camp]'); if (tr) tr.click(); } });
-  const named = location.hash.slice(1); if (['activas', 'creativos', 'campanas', 'views', 'claves'].includes(named)) set({ vista: named });
+  const named = location.hash.slice(1); if (['activas', 'creativos', 'campanas', 'views', 'claves'].includes(named)) set({ vista: named }); if (named === 'revisar') set({ vista: 'activas' });
   const openPieza = (r) => { set({ vista: 'creativos', obj: r.obj, pieza: pkey(r) }); dash.setLink('creativos'); requestAnimationFrame(() => { const f = $('#ficha'); if (f) f.scrollIntoView({ block: 'start', behavior: 'smooth' }); }); };
   let pzById = new Map();
   document.addEventListener('click', (e) => { const tr = e.target.closest && e.target.closest('#crea-tbl tr[data-key], #ret-tbl tr[data-key]'); if (tr && pzById.has(tr.dataset.key)) openPieza(pzById.get(tr.dataset.key)); });
@@ -1654,7 +1654,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   const STL = { verde: 'Vienen bien', mixta: 'Mixtas', rojo: 'Necesitan atención' };
   const PLATC = { TikTok: '#111', Meta: '#3b82f6', YouTube: '#ff3040' };
   const stOf = (c) => { const a = c.d2 == null ? 0 : Math.sign(c.d2), b = c.d1 == null ? 0 : Math.sign(c.d1); const x = a + b; return x > 0 ? 'verde' : x < 0 ? 'rojo' : 'mixta'; };
-  let aest = null, aplat = null, aobj = null, aq = '', asort = 'estado';
+  let aest = location.hash === '#revisar' ? 'rojo' : null, aplat = null, aobj = null, aq = '', asort = 'estado';
   $('#act-q').addEventListener('input', (e) => { aq = e.target.value.trim().toLowerCase(); drawActivas(); });
   $('#act-sort').addEventListener('change', (e) => { asort = e.target.value; drawActivas(); });
   $('#act-cards').addEventListener('click', (e) => { const c = e.target.closest('[data-base]'); if (!c) return; set({ vista: 'creativos', plat: c.dataset.plat, obj: c.dataset.obj, camp: c.dataset.base }); dash.setLink('creativos'); $('#filtros').scrollIntoView({ block: 'start' }); });
@@ -1710,7 +1710,8 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
     const ord = { rojo: 0, mixta: 1, verde: 2 };
     const sc = (x) => (x.c.verde - x.c.rojo) / x.c.n;
     rows.sort({ estado: (a, b) => ord[a.e] - ord[b.e] || sc(a) - sc(b) || b.c.cost - a.c.cost, mejor: (a, b) => ord[b.e] - ord[a.e] || sc(b) - sc(a) || b.c.cost - a.c.cost, cost: (a, b) => b.c.cost - a.c.cost, name: (a, b) => (a.c.linea + a.c.nombre).localeCompare(b.c.linea + b.c.nombre, 'es') }[asort]);
-    if (!rows.length) { cards.append(el('div', 'pz-empty', 'No hay campañas para este filtro.')); return; }
+    if (!rows.length) { cards.append(el('div', 'pz-empty', aest === 'rojo' ? 'No hay campañas para revisar en este período.' : 'No hay campañas para este filtro.')); return; }
+    if (location.hash === '#revisar' && !window.__scrRev) { window.__scrRev = 1; setTimeout(() => $('#activas').scrollIntoView({ behavior: 'smooth' }), 400); }
     const pOrd = { TikTok: 0, Meta: 1, YouTube: 2 };
     for (const x of rows) {
       const c = x.c;
@@ -1908,7 +1909,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   dash.onData(() => {
     const obj = rowsOf('objetivos'), camp = rowsOf('campanas_base'), plats = rowsOf('plataformas'), p = P();
     const est0 = rowsOf('estado');
-    if (!mesInit && est0) { mesInit = true; const mx = d3.max(est0, (r) => r.mes); if (p.mes === 0 && !location.hash && mx) { set({ mes: mx }); return; } }
+    if (!mesInit && est0) { mesInit = true; const mx = d3.max(est0, (r) => r.mes); if (p.mes === 0 && (!location.hash || location.hash === '#revisar') && mx) { set({ mes: mx }); return; } }
     drawChrome(obj, plats); drawTakeaway(obj); drawBench(obj);
     if (p.vista === 'activas') drawActivas();
     if (p.vista === 'campanas') { drawObjCards(obj); drawScores(rowsOf('scores'), rowsOf('piezas')); drawCampChips(obj); drawCamps(camp); }
