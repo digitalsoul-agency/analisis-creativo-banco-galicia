@@ -777,6 +777,18 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
 .pz-fthumb { margin-left: auto; align-self: start; }
 .pz-bulb { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; vertical-align: middle; border-radius: 50%; border: 0; background: #fff3cd; color: #b7791f; cursor: pointer; transition: transform .15s; }
 .pz-bulb:hover { transform: scale(1.15); background: #ffe59a; }
+.pz-rtags { display: flex; flex-wrap: wrap; gap: 6px; }
+.pz-rtag { font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 99px; background: var(--bad-bg); color: var(--bad); }
+.pz-rbars { display: grid; gap: 7px; padding: 10px 12px; border-radius: 10px; background: var(--soft); }
+.pz-rbar { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; grid-template-areas: "k tr v" ". bm bm"; column-gap: 8px; align-items: center; font-size: 12px; }
+.pz-rbar .k { grid-area: k; font-weight: 700; color: var(--color-fg-muted); font-size: 11px; letter-spacing: .04em; }
+.pz-rbar .tr { grid-area: tr; position: relative; height: 10px; border-radius: 6px; background: color-mix(in srgb, var(--color-fg) 8%, transparent); }
+.pz-rbar .tr .f { position: absolute; inset: 0 auto 0 0; border-radius: 6px; }
+.pz-rbar .tr .b { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--color-fg); border-radius: 2px; }
+.pz-rbar .v { grid-area: v; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pz-rbar .bm { grid-area: bm; font-size: 11px; color: var(--color-fg-muted); }
+.pz-rdet summary { cursor: pointer; font-size: 12px; color: var(--color-fg-muted); }
+.pz-rdet .diag { margin-top: 6px; }
 .pz-rc-focus { box-shadow: 0 0 0 3px #f5b83d; animation: pzpulse 1.4s ease 2; }
 @keyframes pzpulse { 50% { box-shadow: 0 0 0 7px rgba(245,184,61,.35); } }
 .pz-tab-reco[aria-selected="false"] { color: var(--acc); font-weight: 600; }
@@ -1657,9 +1669,28 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
       const top = el('div', 'pz-rc-top'); const pt = el('span', 'pz-ftag', x['Plataforma']); pt.style.background = PLATC[x['Plataforma']] || '#555'; pt.style.color = '#fff';
       const pri = el('span', 'pz-rc-pri', 'Prioridad ' + String(x['Prioridad']).toLowerCase()); pri.style.color = x['Prioridad'] === 'Alta' ? '#e5484d' : '#b7791f'; pri.title = x['Prioridad'] === 'Alta' ? 'Score menor a 35 o mucha inversión: conviene cambiarla primero.' : 'Rinde por debajo del benchmark, pero con menos impacto.';
       top.append(pt, objTag(x['Objetivo']), scoreChip(x['Score'] === '' ? null : +x['Score']), pri);
-      c.append(top, el('h3', '', shortName(x['Plataforma'], x['Pieza'])), el('div', 'camp', x['Campaña']), el('div', 'diag', x['Diagnóstico']), el('div', 'lbl', 'Qué cambiar'));
+      c.append(top, el('h3', '', shortName(x['Plataforma'], x['Pieza'])), el('div', 'camp', parseCamp(x['Campaña']).nice));
+      const mm = pz.filter((y) => y.plat === x['Plataforma'] && y.crea === x['Pieza'] && y.mes > 0).sort((a, b) => b.mes - a.mes)[0];
+      if (mm) {
+        const tags = el('div', 'pz-rtags'); const tg = (t) => tags.append(el('span', 'pz-rtag', t));
+        if (mm.plat === 'TikTok' && mm.gancho != null && mm.gancho < 0.2) tg('Gancho débil');
+        if (mm.plat === 'TikTok' && mm.v2 && mm.q25 / mm.v2 < 0.25) tg('Se cae rápido');
+        if (mm.d2 != null && mm.d2 < 0) tg((mm.k2 === 'Interacción' ? 'Interacción' : mm.k2) + ' bajo');
+        if (mm.d1 != null && mm.d1 < 0) tg(mm.k1 + ' alto');
+        if (/VERTICAL/.test(mm.crea) && /INSTREAM/.test(mm.crea)) tg('Formato vertical en in-stream');
+        if (tags.children.length) c.append(tags);
+        const bars = el('div', 'pz-rbars');
+        const bar = (k, v, b, d) => { if (v == null || !b) return; const isC = !!COST[k]; const mx = Math.max(v, b) * 1.15; const row = el('div', 'pz-rbar'); row.append(el('span', 'k', k === 'Interacción' ? 'INT.' : k));
+          const tr = el('div', 'tr'); const fill = el('span', 'f'); fill.style.width = (v / mx * 100) + '%'; fill.style.background = (d >= 0) ? 'var(--good)' : 'var(--bad)'; const mk = el('i', 'b'); mk.style.left = (b / mx * 100) + '%'; mk.title = 'Benchmark ' + fmtK(k, b); tr.append(fill, mk);
+          row.append(tr, el('span', 'v', fmtK(k, v)), el('span', 'bm', (k === 'Gancho' ? 'promedio del objetivo ' : isC ? 'ref. ' : 'bench ') + fmtK(k, b))); bars.append(row); };
+        bar(mm.k2, mm.k2v, mm.k2b ?? mm.ref2, mm.d2 ?? (mm.k2v >= (mm.ref2 || 0) ? 1 : -1)); bar(mm.k1, mm.k1v, mm.k1b ?? mm.ref1, mm.d1 ?? (mm.k1v <= (mm.ref1 || Infinity) ? 1 : -1));
+        if (mm.plat === 'TikTok' && mm.gancho != null) { const refs = pz.filter((y) => y.plat === 'TikTok' && y.obj === mm.obj && y.mes === mm.mes && y.gancho != null && y.imp >= 10000); const g = d3.mean(refs, (y) => y.gancho); if (g) bar('Gancho', mm.gancho, g, mm.gancho - g); }
+        if (bars.children.length) c.append(bars);
+      }
+      c.append(el('div', 'lbl', 'Qué cambiar'));
       const ul = el('ul'); String(x['Qué cambiar']).split(' | ').forEach((t) => ul.append(el('li', '', t))); c.append(ul);
-      if (x['Referencia']) { const rf = el('div', 'ref'); rf.append(el('b', '', 'Referencia: ' + x['Referencia']), el('span', '', x['Por qué funciona la referencia'] || '')); c.append(rf); }
+      if (x['Referencia']) { const rf = el('div', 'ref'); rf.append(el('b', '', '★ Mirá: ' + x['Referencia']), el('span', '', x['Por qué funciona la referencia'] || '')); c.append(rf); }
+      if (x['Diagnóstico']) { const dt = document.createElement('details'); dt.className = 'pz-rdet'; dt.append(el('summary', '', 'Ver diagnóstico'), el('div', 'diag', x['Diagnóstico'])); c.append(dt); }
       const m = pz.find((y) => y.plat === x['Plataforma'] && y.crea === x['Pieza'] && (y.link || y.thumb)); const tv = thumbEl(m || { plat: x['Plataforma'] }, 76); if (tv) { tv.classList.add('pz-rc-th'); c.prepend(tv); } const a = m && linkEl(m, 'Ver la pieza ↗'); if (a) c.append(a);
       cards.append(c);
     }
