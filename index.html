@@ -769,6 +769,8 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
 .pz-nrow { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .pz-thumb { flex: none; display: block; border-radius: 8px; overflow: hidden; background: var(--soft); }
 .pz-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pz-thumb.ph { display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--pc) 14%, var(--color-panel)); border: 1px dashed color-mix(in srgb, var(--pc) 45%, transparent); color: var(--pc); }
+.pz-thumb.ph .ic { font-size: 13px; opacity: .8; }
 .pz-rc { position: relative; }
 .pz-rc-th { position: absolute; top: 14px; right: 14px; }
 .pz-rc:has(.pz-rc-th) .pz-rc-top, .pz-rc:has(.pz-rc-th) h3, .pz-rc:has(.pz-rc-th) .camp { margin-right: 88px; }
@@ -1630,8 +1632,11 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   const bulb = (r) => { if (!r || r.plat == null) return null; const rc = recoFor(r); if (!rc) return null; const b = el('button', 'pz-bulb'); b.type = 'button'; b.innerHTML = BULB; b.title = 'Ver qué mejorar en esta pieza'; b.setAttribute('aria-label', 'Ver qué mejorar en esta pieza');
     b.addEventListener('click', (e) => { e.stopPropagation(); recoFocus = rc['Pieza']; recoPlat = null; set({ vista: 'recos', pieza: null }); dash.setLink('recos'); setTimeout(() => $('#recos').scrollIntoView({ behavior: 'smooth' }), 50); });
     b.addEventListener('keydown', (e) => e.stopPropagation()); return b; };
-  const thumbEl = (r, size) => { if (!r || !r.thumb || !/^https?:\/\//.test(r.thumb)) return null; const a = document.createElement('a'); a.className = 'pz-thumb'; a.href = r.link && /^https:\/\//.test(r.link) ? r.link : r.thumb.replace(/^http:/, 'https:'); a.target = '_blank'; a.rel = 'noopener noreferrer'; a.style.width = a.style.height = (size || 34) + 'px'; a.title = r.plat === 'TikTok' ? 'Ver el video' : 'Ver la imagen';
-    const im = document.createElement('img'); im.loading = 'lazy'; im.referrerPolicy = 'no-referrer'; im.alt = ''; im.src = r.thumb.replace(/^http:/, 'https:'); im.addEventListener('error', () => a.remove()); a.append(im); a.addEventListener('click', (e) => e.stopPropagation()); return a; };
+  const thumbEl = (r, size) => { if (!r) return null; const sz = (size || 34) + 'px'; const has = r.thumb && /^https?:\/\//.test(r.thumb); const href = r.link && /^https:\/\//.test(r.link) ? r.link : has ? r.thumb.replace(/^http:/, 'https:') : null;
+    const a = document.createElement(href ? 'a' : 'span'); a.className = 'pz-thumb'; if (href) { a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer'; } a.style.width = a.style.height = sz; a.style.setProperty('--pc', PLATC[r.plat] || '#888');
+    const ph = () => { a.classList.add('ph'); a.replaceChildren(el('span', 'ic', r.plat === 'TikTok' ? '▶' : r.plat === 'YouTube' ? '▶' : '◼')); a.title = (r.plat === 'YouTube' ? 'YouTube todavía no trae imagen por pieza en la planilla' : 'Sin imagen en la planilla') + (href ? '. Tocá para ver la pieza.' : ''); };
+    if (has) { a.title = r.plat === 'TikTok' ? 'Ver el video' : 'Ver la imagen'; const im = document.createElement('img'); im.loading = 'lazy'; im.referrerPolicy = 'no-referrer'; im.alt = ''; im.src = r.thumb.replace(/^http:/, 'https:'); im.addEventListener('error', ph); a.append(im); } else ph();
+    a.addEventListener('click', (e) => e.stopPropagation()); return a; };
   const nameCell = (r) => { const w = el('div', 'pz-nrow'); const t = thumbEl(r, 34); if (t) w.append(t); const d = el('div', 'pz-cn'); d.append(r.nombre); const b = bulb(r); if (b) d.append(' ', b); w.append(d); return w; };
   const recoRows = () => { const r = rowsOf('recos'); return Array.isArray(r) ? r.filter((x) => x && x['Pieza']) : []; };
   const recoFor = (r) => recoRows().find((x) => x['Plataforma'] === r.plat && x['Pieza'] === r.crea) || null;
@@ -1655,7 +1660,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
       c.append(top, el('h3', '', shortName(x['Plataforma'], x['Pieza'])), el('div', 'camp', x['Campaña']), el('div', 'diag', x['Diagnóstico']), el('div', 'lbl', 'Qué cambiar'));
       const ul = el('ul'); String(x['Qué cambiar']).split(' | ').forEach((t) => ul.append(el('li', '', t))); c.append(ul);
       if (x['Referencia']) { const rf = el('div', 'ref'); rf.append(el('b', '', 'Referencia: ' + x['Referencia']), el('span', '', x['Por qué funciona la referencia'] || '')); c.append(rf); }
-      const m = pz.find((y) => y.plat === x['Plataforma'] && y.crea === x['Pieza'] && (y.link || y.thumb)); const tv = m && thumbEl(m, 76); if (tv) { tv.classList.add('pz-rc-th'); c.prepend(tv); } const a = m && linkEl(m, 'Ver la pieza ↗'); if (a) c.append(a);
+      const m = pz.find((y) => y.plat === x['Plataforma'] && y.crea === x['Pieza'] && (y.link || y.thumb)); const tv = thumbEl(m || { plat: x['Plataforma'] }, 76); if (tv) { tv.classList.add('pz-rc-th'); c.prepend(tv); } const a = m && linkEl(m, 'Ver la pieza ↗'); if (a) c.append(a);
       cards.append(c);
     }
     recoFocus = null;
