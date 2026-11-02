@@ -792,6 +792,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
 .pz-rred { grid-column: 1 / -1; background: var(--color-panel); border: 1px solid var(--color-border-line); border-left: 5px solid #e5484d; border-radius: 14px; padding: 12px 14px; display: grid; gap: 8px; }
 .pz-rred .lbl { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-fg-muted); }
 .pz-rred .ln { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
+.pz-rsep.red { color: #e5484d; font-weight: 700; }
 .pz-rsep { grid-column: 1 / -1; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-fg-muted); margin-top: 8px; }
 .pz-rcamp { font: inherit; font-size: 13px; font-weight: 700; padding: 7px 14px; border-radius: 99px; border: 0; background: #e5484d; color: #fff; cursor: pointer; }
 .pz-rc-focus { box-shadow: 0 0 0 3px #f5b83d; animation: pzpulse 1.4s ease 2; }
@@ -1692,8 +1693,8 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
     cards.replaceChildren(); fil.replaceChildren();
     if (!rows.length) { cards.append(el('div', 'pz-empty', 'Todavía no hay recomendaciones cargadas.')); return; }
     const fecha = rows[0]['Actualizado'];
-    $('#reco-sub').textContent = `Revisión del ${fecha}. Son piezas que rinden por debajo del benchmark aunque su campaña, en general, venga bien. Por eso hay más piezas acá que campañas en rojo en "Necesitan atención": allá se mira la campaña completa, acá cada pieza. Prioridad alta = score menor a 35 o mucha inversión: son las primeras que conviene cambiar.`;
-    for (const k of [null, 'TikTok', 'Meta', 'YouTube']) { const n = rows.filter((x) => !k || x['Plataforma'] === k).length; if (k && !n) continue; const b = el('button', '', (k || 'Todas') + ' · ' + n); b.setAttribute('aria-pressed', String(recoPlat === k)); b.addEventListener('click', () => { recoPlat = k; drawRecos(); }); fil.append(b); }
+    $('#reco-sub').textContent = `Piezas del mes elegido arriba. Primero, las de las campañas que están en rojo en "Campañas activas". Después, piezas que rinden por debajo del benchmark aunque su campaña venga bien. Revisión del ${fecha}.`;
+    for (const k of [null, 'TikTok', 'Meta', 'YouTube']) { const n = rows.filter((x) => !k || x['Plataforma'] === k).length; if (k && !n) continue; const b = el('button', '', k || 'Todas'); b.setAttribute('aria-pressed', String(recoPlat === k)); b.addEventListener('click', () => { recoPlat = k; drawRecos(); }); fil.append(b); }
     const pz = rowsOf('piezas') || [];
     const PRI = { Alta: 0, Media: 1, Baja: 2 };
     if (recoCamp) { const nm = (rows.map((x) => conceptOf(x['Campaña'])).find((k) => k.key === recoCamp) || {}).nombre || recoCamp.split('|').pop(); const chip = el('button', 'pz-rcamp', 'Campaña: ' + nm + '  ✕'); chip.title = 'Ver todas las campañas'; chip.addEventListener('click', () => { recoCamp = null; dash.setLink('recos'); drawRecos(); }); fil.prepend(chip); }
@@ -1728,14 +1729,20 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
         for (const y of ps) { have.add(y.plat + '|' + y.crea); if (!recoPlat || y.plat === recoPlat) extra.push(autoReco(y)); }
       }
     }
+    let isRed = null;
     if (!recoCamp) {
-      const mesC = mesSel || mesAct, have = new Set(list.map((x) => x['Plataforma'] + '|' + x['Pieza']));
+      const mesC = mesSel || mesAct, have = new Set(list.map((x) => x['Plataforma'] + '|' + x['Pieza'])); mesVista = mesC;
+      const redSet = new Set(ccAll.filter((c) => c.mes === mesC).flatMap((c) => c.subs.filter((s) => s.st === 'rojo').map((s) => c.concepto + '|' + s.plat + '|' + s.obj)));
+      isRed = (x) => { const y = pz.find((z) => z.plat === x['Plataforma'] && z.crea === x['Pieza'] && z.mes === mesC); return !!y && redSet.has(conceptOf(y.camp).key + '|' + y.plat + '|' + y.obj); };
+      list = list.filter((x) => enMes(x['Plataforma'], x['Pieza'], mesC));
       for (const cc of ccAll.filter((c) => c.mes === mesC)) for (const s of cc.subs.filter((s) => s.st === 'rojo')) {
         for (const y of pz.filter((y) => y.plat === s.plat && y.obj === s.obj && y.mes === mesC && conceptOf(y.camp).key === cc.concepto && !have.has(y.plat + '|' + y.crea) && ((y.d2 != null && y.d2 < 0) || (y.d1 != null && y.d1 < 0)))) { have.add(y.plat + '|' + y.crea); if (!recoPlat || y.plat === recoPlat) extra.push(autoReco(y)); }
       }
     }
-    const all = [...extra, ...list].sort((a, b) => (PRI[a['Prioridad']] ?? 3) - (PRI[b['Prioridad']] ?? 3) || (+a['Score'] || 0) - (+b['Score'] || 0));
+    const all = [...extra, ...list].sort((a, b) => (isRed ? (isRed(b) ? 1 : 0) - (isRed(a) ? 1 : 0) : 0) || (PRI[a['Prioridad']] ?? 3) - (PRI[b['Prioridad']] ?? 3) || (+a['Score'] || 0) - (+b['Score'] || 0));
+    let secR = false, secO = false;
     for (const x of all) {
+      if (isRed) { const r = isRed(x); if (r && !secR) { secR = true; cards.append(el('div', 'pz-rsep red', 'Campañas que necesitan atención en ' + MES[mesVista].toLowerCase())); } if (!r && !secO) { secO = true; cards.append(el('div', 'pz-rsep', 'Otras piezas para mejorar en ' + MES[mesVista].toLowerCase() + ' (sus campañas vienen bien en general)')); } }
       const c = el('article', 'pz-rc'); c.style.setProperty('--pc', x['Prioridad'] === 'Alta' ? '#e5484d' : '#d39a12'); if (recoFocus && x['Pieza'] === recoFocus) { c.classList.add('pz-rc-focus'); setTimeout(() => c.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250); }
       const top = el('div', 'pz-rc-top'); const pt = el('span', 'pz-ftag', x['Plataforma']); pt.style.background = PLATC[x['Plataforma']] || '#555'; pt.style.color = '#fff';
       const pri = el('span', 'pz-rc-pri', 'Prioridad ' + String(x['Prioridad']).toLowerCase()); pri.style.color = x['Prioridad'] === 'Alta' ? '#e5484d' : '#b7791f'; pri.title = x['Prioridad'] === 'Alta' ? 'Score menor a 35 o mucha inversión: conviene cambiarla primero.' : 'Rinde por debajo del benchmark, pero con menos impacto.';
