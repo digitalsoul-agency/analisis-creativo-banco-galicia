@@ -1630,8 +1630,8 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   }
 
   // ---- ficha de pieza ----
-  function retCurve(svgParent, series, W, H, dark) {
-    const pts = ['2 s', '25%', '50%', '75%', '100%'];
+  function retCurve(svgParent, series, W, H, dark, ptsIn) {
+    const pts = ptsIn || ['2 s', '25%', '50%', '75%', '100%'];
     const m = { l: 40, r: 12, t: 12, b: 26 };
     const x = d3.scalePoint(pts, [m.l, W - m.r]);
     const y = d3.scaleLinear([0, 1], [H - m.b, m.t]);
@@ -2046,6 +2046,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
       $('#vw-title').textContent = `Cuánto se mira cada pieza · ${o}`;
       $('#vw-sub').textContent = 'De cada 100 personas que frenan en el video (views de 2 s), cuántas llegan a cada punto. Así se ve dónde se cae la atención.';
       $('#embudo').hidden = false; $('#curvas').hidden = false;
+      $('#curve-sub').textContent = 'Las 10 piezas con más impresiones contra el promedio (línea gruesa). 100% = views de 2 segundos.';
       if (rt) {
         const mk = (f) => ({ source: 'retencion', field: f, where: 'id=' + rt.id });
         S('Gancho (VTR 2 s)', pct(rt.gancho), 'views de 2 s sobre impresiones', mk('gancho'));
@@ -2084,7 +2085,8 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
     } else if (p.plat === 'Meta' && rows.some((r) => r.m25)) {
       $('#vw-title').textContent = `Cuánto se mira cada pieza · ${o}`;
       $('#vw-sub').textContent = 'De cada 100 impresiones, cuántas llegan a cada punto del video. Así se ve dónde se cae la atención.';
-      $('#embudo').hidden = false; $('#curvas').hidden = true;
+      $('#embudo').hidden = false; $('#curvas').hidden = false;
+      $('#curve-sub').textContent = 'Las 10 piezas con más impresiones contra el promedio (línea gruesa). 100% = quienes llegan al 25% del video (Meta todavía no trae en la planilla las views de 3 segundos).';
       let mr = rows.filter((r) => r.m25);
       const A = { imp: d3.sum(mr, (r) => r.imp), m25: d3.sum(mr, (r) => r.m25), m50: d3.sum(mr, (r) => r.m50), m75: d3.sum(mr, (r) => r.m75), m100: d3.sum(mr, (r) => r.m100), tp: d3.sum(mr, (r) => r.views) };
       S('Llegan al 25%', pct(A.m25 / A.imp), 'reproducciones al 25% sobre impresiones');
@@ -2098,6 +2100,13 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
         const row = el('div', 'pz-fstep'); const bar = el('div', 'pz-fbar'); const sp = el('span'); sp.style.width = Math.max(1.5, (st[1] / A.imp) * 100) + '%';
         bar.append(sp, el('em', '', `${big(st[1])} · ${pct(st[1] / A.imp)}`)); row.append(el('span', '', st[0]), bar); fun.append(row);
         if (i < steps.length - 1) { const d = el('div', 'pz-fdrop' + (i === worstI ? ' big' : ''), `↓ se pierde el ${pct(drops[i])}${i === worstI ? ' · mayor caída' : ''}`); fun.append(d); }
+      });
+      requestAnimationFrame(() => {
+        const ch = retCurve(cur, null, Math.max(300, cur.clientWidth || 420), 300, false, ['25%', '50%', '75%', '100%']);
+        const cOf = (r) => [1, r.m50 / r.m25, r.m75 / r.m25, r.m100 / r.m25];
+        const avg = cOf(A);
+        mr.slice().sort((a, b) => b.imp - a.imp).slice(0, 10).forEach((r) => { const c = cOf(r); ch.add(c, c[3] >= avg[3] ? 'var(--good)' : 'var(--bad)', 1.6, .55, `${r.nombre}: de quienes llegan al 25%, el ${pct(c[3])} lo ve completo`).style('cursor', 'pointer').on('click', () => openPieza(r)); });
+        ch.add(avg, 'var(--color-fg)', 3.5, 1, 'Promedio del objetivo');
       });
       ['Pieza', 'Score', 'Impresiones', '25%', '50%', '75%', '100%', 'ThruPlay'].forEach((h, i) => { const th = el('th', i ? 'num' : '', h); th.dataset.field = ['nombre', 'score', 'imp', 'm25', 'm50', 'm75', 'm100', 'views'][i]; head.append(th); });
       if (vq) mr = mr.filter((r) => (r.nombre + ' ' + r.camp).toLowerCase().includes(vq));
