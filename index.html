@@ -789,6 +789,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
 .pz-rbar .bm { grid-area: bm; font-size: 11px; color: var(--color-fg-muted); }
 .pz-rdet summary { cursor: pointer; font-size: 12px; color: var(--color-fg-muted); }
 .pz-rdet .diag { margin-top: 6px; }
+.pz-rcamp { font: inherit; font-size: 13px; font-weight: 700; padding: 7px 14px; border-radius: 99px; border: 0; background: #e5484d; color: #fff; cursor: pointer; }
 .pz-rc-focus { box-shadow: 0 0 0 3px #f5b83d; animation: pzpulse 1.4s ease 2; }
 @keyframes pzpulse { 50% { box-shadow: 0 0 0 7px rgba(245,184,61,.35); } }
 .pz-tab-reco[aria-selected="false"] { color: var(--acc); font-weight: 600; }
@@ -1152,7 +1153,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   $('#pc-q').addEventListener('input', (e) => { q = e.target.value.trim().toLowerCase(); drawCreaTable(); });
   $('#camp-groups').addEventListener('click', (e) => { const tr = e.target.closest('tr[data-camp]'); if (!tr) return; set({ vista: 'creativos', camp: tr.dataset.camp, obj: tr.dataset.obj, mes: 0 }); dash.setLink('creativos'); $('#filtros').scrollIntoView({ block: 'start' }); });
   $('#camp-groups').addEventListener('keydown', (e) => { if (e.key === 'Enter') { const tr = e.target.closest('tr[data-camp]'); if (tr) tr.click(); } });
-  const named = location.hash.slice(1); if (['activas', 'creativos', 'campanas', 'views', 'claves', 'recos'].includes(named)) set({ vista: named }); if (named === 'revisar') set({ vista: 'activas' });
+  const named = location.hash.slice(1); if (['activas', 'creativos', 'campanas', 'views', 'claves', 'recos'].includes(named)) set({ vista: named }); if (named === 'revisar') set({ vista: 'activas' }); if (named.startsWith('recos:')) set({ vista: 'recos' });
   const openPieza = (r) => { set({ vista: 'creativos', obj: r.obj, pieza: pkey(r) }); dash.setLink('creativos'); requestAnimationFrame(() => { const f = $('#ficha'); if (f) f.scrollIntoView({ block: 'start', behavior: 'smooth' }); }); };
   let pzById = new Map();
   document.addEventListener('click', (e) => { const tr = e.target.closest && e.target.closest('#crea-tbl tr[data-key], #ret-tbl tr[data-key]'); if (tr && pzById.has(tr.dataset.key)) openPieza(pzById.get(tr.dataset.key)); });
@@ -1650,6 +1651,21 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
     if (has) { a.title = r.plat === 'TikTok' ? 'Ver el video' : 'Ver la imagen'; const im = document.createElement('img'); im.loading = 'lazy'; im.referrerPolicy = 'no-referrer'; im.alt = ''; im.src = r.thumb.replace(/^http:/, 'https:'); im.addEventListener('error', ph); a.append(im); } else ph();
     a.addEventListener('click', (e) => e.stopPropagation()); return a; };
   const nameCell = (r) => { const w = el('div', 'pz-nrow'); const t = thumbEl(r, 34); if (t) w.append(t); const d = el('div', 'pz-cn'); d.append(r.nombre); const b = bulb(r); if (b) d.append(' ', b); w.append(d); return w; };
+  const conceptOf = (b) => {
+    const NOISE = /^(ALCANCE|REPRODUCCION[ -]VIDEO|TRAFICO|VIEWS|INTERACCION|CONSIDERACION|ENGAGEMENT|R&F|AO|REDES|A\/B-TEST|LEADS|CONVERSIONES)$/;
+    const MON = /^(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|SETIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE|20\d\d(-20\d\d)?)$/;
+    const pretty = (t) => t.toLowerCase().replace(/-/g, ' ').replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+    const raw = String(b).toUpperCase();
+    const tk = raw.replace(/^IO_/, '').replace(/^BG_/, '').split('_').filter((t) => t && !NOISE.test(t) && !MON.test(t));
+    if (raw.includes('ELQUEQUIERECELESTE')) return { key: 'ELQUEQUIERECELESTE', nombre: 'El que quiere celeste' };
+    if (/(^|_)FIMA(_|$)/.test(raw.replace(/^IO_/, '').replace(/^BG_/, '_'))) return { key: 'FIMA', nombre: 'FIMA' };
+    if (raw.includes('EMINENT') && raw.includes('REPOSICIONAMIENTO')) return { key: 'EMINENT|REPOSICIONAMIENTO', nombre: 'Éminent Reposicionamiento' };
+    if (raw.includes('EMINENT') && raw.includes('PUMAS')) return { key: 'EMINENT|PUMAS', nombre: 'Éminent Pumas' };
+    if (/(^|[_-])AO($|[_-])/.test(raw)) return { key: 'ALWAYS-ON', nombre: 'Always On' };
+    const line = tk[0] || 'OTROS', sub = tk[1] || '';
+    return { key: (line + '|' + sub).toUpperCase(), nombre: pretty(sub || line) };
+  };
+  let recoCamp = location.hash.startsWith('#recos:') ? decodeURIComponent(location.hash.slice(7)) : null;
   const recoRows = () => { const r = rowsOf('recos'); return Array.isArray(r) ? r.filter((x) => x && x['Pieza']) : []; };
   const recoFor = (r) => recoRows().find((x) => x['Plataforma'] === r.plat && x['Pieza'] === r.crea) || null;
   const shortName = (plat, crea) => { const s = String(crea); if (plat === 'TikTok') { const i = s.lastIndexOf('TIK TOK_'); return (i >= 0 ? s.slice(i + 8) : s).replace(/^VIDEO_/, '').replace(/-/g, ' '); } return s.replace(/^FB-IG_(VIDEO|IMAGEN|CARROUSEL|CARRUSEL|GIF)_/, '').replace(/[-_]/g, ' '); };
@@ -1663,7 +1679,8 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
     for (const k of [null, 'TikTok', 'Meta', 'YouTube']) { const n = rows.filter((x) => !k || x['Plataforma'] === k).length; if (k && !n) continue; const b = el('button', '', (k || 'Todas') + ' · ' + n); b.setAttribute('aria-pressed', String(recoPlat === k)); b.addEventListener('click', () => { recoPlat = k; drawRecos(); }); fil.append(b); }
     const pz = rowsOf('piezas') || [];
     const PRI = { Alta: 0, Media: 1, Baja: 2 };
-    const list = rows.filter((x) => !recoPlat || x['Plataforma'] === recoPlat).sort((a, b) => (PRI[a['Prioridad']] ?? 3) - (PRI[b['Prioridad']] ?? 3) || (+a['Score'] || 0) - (+b['Score'] || 0));
+    if (recoCamp) { const nm = (rows.map((x) => conceptOf(x['Campaña'])).find((k) => k.key === recoCamp) || {}).nombre || recoCamp.split('|').pop(); const chip = el('button', 'pz-rcamp', 'Campaña: ' + nm + '  ✕'); chip.title = 'Ver todas las campañas'; chip.addEventListener('click', () => { recoCamp = null; dash.setLink('recos'); drawRecos(); }); fil.prepend(chip); }
+    const list = rows.filter((x) => (!recoPlat || x['Plataforma'] === recoPlat) && (!recoCamp || conceptOf(x['Campaña']).key === recoCamp)).sort((a, b) => (PRI[a['Prioridad']] ?? 3) - (PRI[b['Prioridad']] ?? 3) || (+a['Score'] || 0) - (+b['Score'] || 0));
     for (const x of list) {
       const c = el('article', 'pz-rc'); c.style.setProperty('--pc', x['Prioridad'] === 'Alta' ? '#e5484d' : '#d39a12'); if (recoFocus && x['Pieza'] === recoFocus) { c.classList.add('pz-rc-focus'); setTimeout(() => c.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250); }
       const top = el('div', 'pz-rc-top'); const pt = el('span', 'pz-ftag', x['Plataforma']); pt.style.background = PLATC[x['Plataforma']] || '#555'; pt.style.color = '#fff';
@@ -1694,6 +1711,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
       const m = pz.find((y) => y.plat === x['Plataforma'] && y.crea === x['Pieza'] && (y.link || y.thumb)); const tv = thumbEl(m || { plat: x['Plataforma'] }, 76); if (tv) { tv.classList.add('pz-rc-th'); c.prepend(tv); } const a = m && linkEl(m, 'Ver la pieza ↗'); if (a) c.append(a);
       cards.append(c);
     }
+    if (!list.length) cards.append(el('div', 'pz-empty', recoCamp ? 'Esta semana no hay piezas de esta campaña por debajo del benchmark. Tocá ✕ arriba para ver todas.' : 'No hay recomendaciones para este filtro.'));
     recoFocus = null;
   }
   function drawFicha(pz, ret) {
