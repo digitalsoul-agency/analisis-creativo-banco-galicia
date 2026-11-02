@@ -789,6 +789,10 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
 .pz-rbar .bm { grid-area: bm; font-size: 11px; color: var(--color-fg-muted); }
 .pz-rdet summary { cursor: pointer; font-size: 12px; color: var(--color-fg-muted); }
 .pz-rdet .diag { margin-top: 6px; }
+.pz-rred { grid-column: 1 / -1; background: var(--color-panel); border: 1px solid var(--color-border-line); border-left: 5px solid #e5484d; border-radius: 14px; padding: 12px 14px; display: grid; gap: 8px; }
+.pz-rred .lbl { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-fg-muted); }
+.pz-rred .ln { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
+.pz-rsep { grid-column: 1 / -1; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-fg-muted); margin-top: 8px; }
 .pz-rcamp { font: inherit; font-size: 13px; font-weight: 700; padding: 7px 14px; border-radius: 99px; border: 0; background: #e5484d; color: #fff; cursor: pointer; }
 .pz-rc-focus { box-shadow: 0 0 0 3px #f5b83d; animation: pzpulse 1.4s ease 2; }
 @keyframes pzpulse { 50% { box-shadow: 0 0 0 7px rgba(245,184,61,.35); } }
@@ -1666,9 +1670,22 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
     return { key: (line + '|' + sub).toUpperCase(), nombre: pretty(sub || line) };
   };
   let recoCamp = location.hash.startsWith('#recos:') ? decodeURIComponent(location.hash.slice(7)) : null;
+  window.addEventListener('hashchange', () => { if (location.hash.startsWith('#recos:')) { recoCamp = decodeURIComponent(location.hash.slice(7)); if (P().vista === 'recos') drawRecos(); else set({ vista: 'recos' }); } });
   const recoRows = () => { const r = rowsOf('recos'); return Array.isArray(r) ? r.filter((x) => x && x['Pieza']) : []; };
   const recoFor = (r) => recoRows().find((x) => x['Plataforma'] === r.plat && x['Pieza'] === r.crea) || null;
   const shortName = (plat, crea) => { const s = String(crea); if (plat === 'TikTok') { const i = s.lastIndexOf('TIK TOK_'); return (i >= 0 ? s.slice(i + 8) : s).replace(/^VIDEO_/, '').replace(/-/g, ' '); } return s.replace(/^FB-IG_(VIDEO|IMAGEN|CARROUSEL|CARRUSEL|GIF)_/, '').replace(/[-_]/g, ' '); };
+  const autoReco = (y) => {
+    const pz = rowsOf('piezas') || [], tips = [];
+    const pares = pz.filter((z) => z.plat === y.plat && z.obj === y.obj && z.mes === y.mes && z.imp >= 10000 && z.score != null);
+    const best = pares.slice().sort((a, b) => b.score - a.score)[0];
+    if (y.plat === 'TikTok' && y.gancho != null) { const g = d3.mean(pares.filter((z) => z.gancho != null), (z) => z.gancho); if (g && y.gancho < g) tips.push(`Reforzar los primeros 2 segundos: el gancho es ${pct(y.gancho)} contra ${pct(g)} de promedio. Probar abrir con el beneficio o una cara.`); }
+    if (y.plat === 'TikTok' && y.v2 && y.q25 / y.v2 < 0.3) tips.push(`Subir el ritmo del arranque: solo ${pct(y.q25 / y.v2)} de quienes la ven llega al 25% del video. Probar una versión más corta.`);
+    if (y.d2 != null && y.d2 < 0) tips.push(`${y.k2} ${fmtK(y.k2, y.k2v)}, ${Math.round(-y.d2 * 100)}% por debajo del benchmark: probar una versión nueva de la pieza con otro gancho o mensaje.`);
+    if (y.d1 != null && y.d1 < 0) tips.push(`${y.k1} ${fmtK(y.k1, y.k1v)}, ${Math.round(-y.d1 * 100)}% por encima del costo promedio: si la pieza lleva varias semanas, rotarla para bajar el desgaste.`);
+    if (/VERTICAL/.test(y.crea) && /INSTREAM/.test(y.crea)) tips.push('Hacer una versión horizontal 16:9 para in-stream.');
+    return { _auto: true, 'Plataforma': y.plat, 'Objetivo': y.obj, 'Campaña': y.camp, 'Pieza': y.crea, 'Score': y.score ?? '', 'Prioridad': 'Alta', 'Qué cambiar': tips.slice(0, 3).join(' | ') || 'Probar una versión nueva de la pieza.',
+      'Referencia': best && best.crea !== y.crea ? `${best.nombre} (score ${best.score})` : '', 'Por qué funciona la referencia': best && best.crea !== y.crea ? `${best.k2} ${fmtK(best.k2, best.k2v)} con el mismo objetivo en ${MES[y.mes].toLowerCase()}.` : '' };
+  };
   let recoPlat = null;
   function drawRecos() {
     const rows = recoRows(), cards = $('#reco-cards'), fil = $('#reco-fil');
@@ -1681,7 +1698,32 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
     const PRI = { Alta: 0, Media: 1, Baja: 2 };
     if (recoCamp) { const nm = (rows.map((x) => conceptOf(x['Campaña'])).find((k) => k.key === recoCamp) || {}).nombre || recoCamp.split('|').pop(); const chip = el('button', 'pz-rcamp', 'Campaña: ' + nm + '  ✕'); chip.title = 'Ver todas las campañas'; chip.addEventListener('click', () => { recoCamp = null; dash.setLink('recos'); drawRecos(); }); fil.prepend(chip); }
     const list = rows.filter((x) => (!recoPlat || x['Plataforma'] === recoPlat) && (!recoCamp || conceptOf(x['Campaña']).key === recoCamp)).sort((a, b) => (PRI[a['Prioridad']] ?? 3) - (PRI[b['Prioridad']] ?? 3) || (+a['Score'] || 0) - (+b['Score'] || 0));
-    for (const x of list) {
+    // Campaña filtrada: qué partes están en rojo y piezas de esas partes aunque la revisión semanal no las tenga
+    let rojasP = [], extra = [];
+    if (recoCamp) {
+      const cb = rowsOf('campanas_base') || [], byId = new Map(cb.map((r) => [r.id, r]));
+      const cc = (rowsOf('campanias') || []).filter((c) => c.concepto === recoCamp && c.mes > 0).sort((a, b) => b.mes - a.mes)[0];
+      if (cc) {
+        rojasP = cc.subs.filter((s) => s.st === 'rojo').map((s) => ({ ...s, b: byId.get(s.ref), mes: cc.mes }));
+        if (rojasP.length) {
+          const box = el('div', 'pz-rred'); box.append(el('div', 'lbl', 'Por esto la campaña está en rojo en ' + MES[cc.mes].toLowerCase()));
+          for (const s of rojasP) { const b = s.b || {}; const ln = el('div', 'ln'); const pt = el('span', 'pz-ftag', s.plat); pt.style.background = PLATC[s.plat] || '#555'; pt.style.color = '#fff'; ln.append(pt, objTag(s.obj));
+            if (b.k2v != null) ln.append(el('span', 'm', ' ' + b.k2 + ' ' + fmtK(b.k2, b.k2v)), badge(b.d2, null, b.k2)); if (b.k1v != null) ln.append(el('span', 'm', ' ' + b.k1 + ' ' + fmtK(b.k1, b.k1v)), badge(b.d1, null, b.k1)); box.append(ln); }
+          cards.append(box);
+        }
+        const have = new Set(rows.map((x) => x['Plataforma'] + '|' + x['Pieza']));
+        for (const s of rojasP) {
+          const ps = pz.filter((y) => y.plat === s.plat && y.obj === s.obj && y.mes === s.mes && conceptOf(y.camp).key === recoCamp && !have.has(y.plat + '|' + y.crea) && ((y.d2 != null && y.d2 < 0) || (y.d1 != null && y.d1 < 0)));
+          for (const y of ps) { have.add(y.plat + '|' + y.crea); if (!recoPlat || y.plat === recoPlat) extra.push(autoReco(y)); }
+        }
+      }
+    }
+    const redKey = new Set(rojasP.map((s) => s.plat + '|' + s.obj));
+    const inRed = (x) => redKey.has(x['Plataforma'] + '|' + x['Objetivo']) || redKey.has(x['Plataforma'] + '|' + (pz.find((y) => y.plat === x['Plataforma'] && y.crea === x['Pieza']) || {}).obj);
+    const all = [...extra, ...list].sort((a, b) => (inRed(b) ? 1 : 0) - (inRed(a) ? 1 : 0) || (PRI[a['Prioridad']] ?? 3) - (PRI[b['Prioridad']] ?? 3) || (+a['Score'] || 0) - (+b['Score'] || 0));
+    let otrasHdr = false;
+    for (const x of all) {
+      if (rojasP.length && !inRed(x) && !otrasHdr) { otrasHdr = true; cards.append(el('div', 'pz-rsep', 'Otras piezas de esta campaña para mejorar')); }
       const c = el('article', 'pz-rc'); c.style.setProperty('--pc', x['Prioridad'] === 'Alta' ? '#e5484d' : '#d39a12'); if (recoFocus && x['Pieza'] === recoFocus) { c.classList.add('pz-rc-focus'); setTimeout(() => c.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250); }
       const top = el('div', 'pz-rc-top'); const pt = el('span', 'pz-ftag', x['Plataforma']); pt.style.background = PLATC[x['Plataforma']] || '#555'; pt.style.color = '#fff';
       const pri = el('span', 'pz-rc-pri', 'Prioridad ' + String(x['Prioridad']).toLowerCase()); pri.style.color = x['Prioridad'] === 'Alta' ? '#e5484d' : '#b7791f'; pri.title = x['Prioridad'] === 'Alta' ? 'Score menor a 35 o mucha inversión: conviene cambiarla primero.' : 'Rinde por debajo del benchmark, pero con menos impacto.';
@@ -1704,14 +1746,14 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
         if (mm.plat === 'TikTok' && mm.gancho != null) { const refs = pz.filter((y) => y.plat === 'TikTok' && y.obj === mm.obj && y.mes === mm.mes && y.gancho != null && y.imp >= 10000); const g = d3.mean(refs, (y) => y.gancho); if (g) bar('Gancho', mm.gancho, g, mm.gancho - g); }
         if (bars.children.length) c.append(bars);
       }
-      c.append(el('div', 'lbl', 'Qué cambiar'));
+      c.append(el('div', 'lbl', 'Qué cambiar' + (x._auto ? ' · sugerencia automática (la revisión completa llega el lunes)' : '')));
       const ul = el('ul'); String(x['Qué cambiar']).split(' | ').forEach((t) => ul.append(el('li', '', t))); c.append(ul);
       if (x['Referencia']) { const rf = el('div', 'ref'); rf.append(el('b', '', '★ Mirá: ' + x['Referencia']), el('span', '', x['Por qué funciona la referencia'] || '')); c.append(rf); }
       if (x['Diagnóstico']) { const dt = document.createElement('details'); dt.className = 'pz-rdet'; dt.append(el('summary', '', 'Ver diagnóstico'), el('div', 'diag', x['Diagnóstico'])); c.append(dt); }
       const m = pz.find((y) => y.plat === x['Plataforma'] && y.crea === x['Pieza'] && (y.link || y.thumb)); const tv = thumbEl(m || { plat: x['Plataforma'] }, 76); if (tv) { tv.classList.add('pz-rc-th'); c.prepend(tv); } const a = m && linkEl(m, 'Ver la pieza ↗'); if (a) c.append(a);
       cards.append(c);
     }
-    if (!list.length) cards.append(el('div', 'pz-empty', recoCamp ? 'Esta semana no hay piezas de esta campaña por debajo del benchmark. Tocá ✕ arriba para ver todas.' : 'No hay recomendaciones para este filtro.'));
+    if (!all.length) cards.append(el('div', 'pz-empty', recoCamp ? 'Esta semana no hay piezas de esta campaña por debajo del benchmark. Tocá ✕ arriba para ver todas.' : 'No hay recomendaciones para este filtro.'));
     recoFocus = null;
   }
   function drawFicha(pz, ret) {
