@@ -1284,10 +1284,10 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
     $('#views').hidden = p.vista !== 'views';
     $('#claves').hidden = p.vista !== 'claves';
     $('#recos').hidden = p.vista !== 'recos';
-    if (p.vista === 'recos') { $('#fg-plat').hidden = true; const fm = root.querySelector('.pz-fg-m'); if (fm) fm.hidden = true; } else { const fm = root.querySelector('.pz-fg-m'); if (fm) fm.hidden = false; }
+    if (p.vista === 'recos') $('#fg-plat').hidden = true; { const fm = root.querySelector('.pz-fg-m'); if (fm) fm.hidden = false; }
     $('#pc-chicos').checked = !!p.chicos;
     const est = rowsOf('estado');
-    const meses = act ? (est ? [...new Set(est.map((r) => r.mes))].sort((a, b) => a - b) : []) : obj ? [...new Set(obj.filter((r) => r.plat === p.plat).map((r) => r.mes))].sort((a, b) => a - b) : [];
+    const meses = (act || p.vista === 'recos') ? (est ? [...new Set(est.map((r) => r.mes))].sort((a, b) => a - b) : []) : obj ? [...new Set(obj.filter((r) => r.plat === p.plat).map((r) => r.mes))].sort((a, b) => a - b) : [];
     const box = $('#meses');
     box.replaceChildren(...meses.map((m) => {
       const b = el('button', 'pz-m' + (m === 0 ? ' acum' : ''), m === 0 ? `Todo el año` : MES3[m]);
@@ -1697,41 +1697,51 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
     const pz = rowsOf('piezas') || [];
     const PRI = { Alta: 0, Media: 1, Baja: 2 };
     if (recoCamp) { const nm = (rows.map((x) => conceptOf(x['Campaña'])).find((k) => k.key === recoCamp) || {}).nombre || recoCamp.split('|').pop(); const chip = el('button', 'pz-rcamp', 'Campaña: ' + nm + '  ✕'); chip.title = 'Ver todas las campañas'; chip.addEventListener('click', () => { recoCamp = null; dash.setLink('recos'); drawRecos(); }); fil.prepend(chip); }
-    const list = rows.filter((x) => (!recoPlat || x['Plataforma'] === recoPlat) && (!recoCamp || conceptOf(x['Campaña']).key === recoCamp)).sort((a, b) => (PRI[a['Prioridad']] ?? 3) - (PRI[b['Prioridad']] ?? 3) || (+a['Score'] || 0) - (+b['Score'] || 0));
-    // Campaña filtrada: qué partes están en rojo y piezas de esas partes aunque la revisión semanal no las tenga
-    let rojasP = [], extra = [];
+    const mesSel = P().mes || 0;
+    const ccAll = rowsOf('campanias') || [], mesAct = Math.max(0, ...ccAll.map((c) => c.mes || 0));
+    const enMes = (plat, crea, m) => !m || pz.some((y) => y.plat === plat && y.crea === crea && y.mes === m);
+    let list = rows.filter((x) => (!recoPlat || x['Plataforma'] === recoPlat) && (!recoCamp || conceptOf(x['Campaña']).key === recoCamp) && enMes(x['Plataforma'], x['Pieza'], mesSel));
+    // Campaña filtrada: solo lo que está en rojo en el período elegido
+    let extra = [], mesVista = mesSel;
     if (recoCamp) {
+      const mesC = mesSel || mesAct; mesVista = mesC;
       const cb = rowsOf('campanas_base') || [], byId = new Map(cb.map((r) => [r.id, r]));
-      const ccAll = rowsOf('campanias') || [], mesAct = Math.max(0, ...ccAll.map((c) => c.mes || 0));
-      const cc = ccAll.find((c) => c.concepto === recoCamp && c.mes === mesAct);
-      if (!cc && mesAct) { const box = el('div', 'pz-rred'); box.style.borderLeftColor = '#8a8494'; box.append(el('div', 'lbl', 'Esta campaña no tiene actividad en ' + MES[mesAct].toLowerCase()), el('div', '', 'Abajo quedan las recomendaciones de su último período activo.')); cards.append(box); }
-      if (cc) {
-        rojasP = cc.subs.filter((s) => s.st === 'rojo').map((s) => ({ ...s, b: byId.get(s.ref), mes: cc.mes }));
-        if (rojasP.length) {
-          const box = el('div', 'pz-rred'); box.append(el('div', 'lbl', 'Por esto la campaña está en rojo en ' + MES[cc.mes].toLowerCase()));
+      const cc = ccAll.find((c) => c.concepto === recoCamp && c.mes === mesC);
+      const box = el('div', 'pz-rred'); cards.append(box);
+      let rojasP = [];
+      if (!cc) { box.style.borderLeftColor = '#8a8494'; box.append(el('div', 'lbl', 'Esta campaña no tiene actividad en ' + MES[mesC].toLowerCase())); }
+      else {
+        rojasP = cc.subs.filter((s) => s.st === 'rojo').map((s) => ({ ...s, b: byId.get(s.ref) }));
+        if (!rojasP.length) { box.style.borderLeftColor = '#1f9d6b'; box.append(el('div', 'lbl', 'En ' + MES[mesC].toLowerCase() + ' esta campaña no tiene nada en rojo')); }
+        else {
+          box.append(el('div', 'lbl', 'Por esto la campaña está en rojo en ' + MES[mesC].toLowerCase()));
           for (const s of rojasP) { const b = s.b || {}; const ln = el('div', 'ln'); const pt = el('span', 'pz-ftag', s.plat); pt.style.background = PLATC[s.plat] || '#555'; pt.style.color = '#fff'; ln.append(pt, objTag(s.obj));
             if (b.k2v != null) ln.append(el('span', 'm', ' ' + b.k2 + ' ' + fmtK(b.k2, b.k2v)), badge(b.d2, null, b.k2)); if (b.k1v != null) ln.append(el('span', 'm', ' ' + b.k1 + ' ' + fmtK(b.k1, b.k1v)), badge(b.d1, null, b.k1)); box.append(ln); }
-          cards.append(box);
-        }
-        const have = new Set(rows.map((x) => x['Plataforma'] + '|' + x['Pieza']));
-        for (const s of rojasP) {
-          const ps = pz.filter((y) => y.plat === s.plat && y.obj === s.obj && y.mes === s.mes && conceptOf(y.camp).key === recoCamp && !have.has(y.plat + '|' + y.crea) && ((y.d2 != null && y.d2 < 0) || (y.d1 != null && y.d1 < 0)));
-          for (const y of ps) { have.add(y.plat + '|' + y.crea); if (!recoPlat || y.plat === recoPlat) extra.push(autoReco(y)); }
         }
       }
+      const redKey = new Set(rojasP.map((s) => s.plat + '|' + s.obj));
+      const objOf = (plat, crea) => (pz.find((y) => y.plat === plat && y.crea === crea && y.mes === mesC) || {}).obj;
+      list = list.filter((x) => enMes(x['Plataforma'], x['Pieza'], mesC) && redKey.has(x['Plataforma'] + '|' + objOf(x['Plataforma'], x['Pieza'])));
+      const have = new Set(list.map((x) => x['Plataforma'] + '|' + x['Pieza']));
+      for (const s of rojasP) {
+        const ps = pz.filter((y) => y.plat === s.plat && y.obj === s.obj && y.mes === mesC && conceptOf(y.camp).key === recoCamp && !have.has(y.plat + '|' + y.crea) && ((y.d2 != null && y.d2 < 0) || (y.d1 != null && y.d1 < 0)));
+        for (const y of ps) { have.add(y.plat + '|' + y.crea); if (!recoPlat || y.plat === recoPlat) extra.push(autoReco(y)); }
+      }
     }
-    const redKey = new Set(rojasP.map((s) => s.plat + '|' + s.obj));
-    const inRed = (x) => redKey.has(x['Plataforma'] + '|' + x['Objetivo']) || redKey.has(x['Plataforma'] + '|' + (pz.find((y) => y.plat === x['Plataforma'] && y.crea === x['Pieza']) || {}).obj);
-    const all = [...extra, ...list].sort((a, b) => (inRed(b) ? 1 : 0) - (inRed(a) ? 1 : 0) || (PRI[a['Prioridad']] ?? 3) - (PRI[b['Prioridad']] ?? 3) || (+a['Score'] || 0) - (+b['Score'] || 0));
-    let otrasHdr = false;
+    if (!recoCamp) {
+      const mesC = mesSel || mesAct, have = new Set(list.map((x) => x['Plataforma'] + '|' + x['Pieza']));
+      for (const cc of ccAll.filter((c) => c.mes === mesC)) for (const s of cc.subs.filter((s) => s.st === 'rojo')) {
+        for (const y of pz.filter((y) => y.plat === s.plat && y.obj === s.obj && y.mes === mesC && conceptOf(y.camp).key === cc.concepto && !have.has(y.plat + '|' + y.crea) && ((y.d2 != null && y.d2 < 0) || (y.d1 != null && y.d1 < 0)))) { have.add(y.plat + '|' + y.crea); if (!recoPlat || y.plat === recoPlat) extra.push(autoReco(y)); }
+      }
+    }
+    const all = [...extra, ...list].sort((a, b) => (PRI[a['Prioridad']] ?? 3) - (PRI[b['Prioridad']] ?? 3) || (+a['Score'] || 0) - (+b['Score'] || 0));
     for (const x of all) {
-      if (rojasP.length && !inRed(x) && !otrasHdr) { otrasHdr = true; cards.append(el('div', 'pz-rsep', 'Otras piezas de esta campaña para mejorar')); }
       const c = el('article', 'pz-rc'); c.style.setProperty('--pc', x['Prioridad'] === 'Alta' ? '#e5484d' : '#d39a12'); if (recoFocus && x['Pieza'] === recoFocus) { c.classList.add('pz-rc-focus'); setTimeout(() => c.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250); }
       const top = el('div', 'pz-rc-top'); const pt = el('span', 'pz-ftag', x['Plataforma']); pt.style.background = PLATC[x['Plataforma']] || '#555'; pt.style.color = '#fff';
       const pri = el('span', 'pz-rc-pri', 'Prioridad ' + String(x['Prioridad']).toLowerCase()); pri.style.color = x['Prioridad'] === 'Alta' ? '#e5484d' : '#b7791f'; pri.title = x['Prioridad'] === 'Alta' ? 'Score menor a 35 o mucha inversión: conviene cambiarla primero.' : 'Rinde por debajo del benchmark, pero con menos impacto.';
       top.append(pt, objTag(x['Objetivo']), scoreChip(x['Score'] === '' ? null : +x['Score']), pri);
-      c.append(top, el('h3', '', shortName(x['Plataforma'], x['Pieza'])), el('div', 'camp', parseCamp(x['Campaña']).nice));
-      const mm = pz.filter((y) => y.plat === x['Plataforma'] && y.crea === x['Pieza'] && y.mes > 0).sort((a, b) => b.mes - a.mes)[0];
+      { const cn = conceptOf(x['Campaña']).nombre, nc = parseCamp(x['Campaña']).nice; const cm = el('div', 'camp'); cm.append(el('b', '', 'Campaña: ' + cn), /R&F/.test(x['Campaña']) ? ' · R&F' : ''); cm.title = x['Campaña']; c.append(top, el('h3', '', shortName(x['Plataforma'], x['Pieza'])), cm); }
+      const mm = pz.filter((y) => y.plat === x['Plataforma'] && y.crea === x['Pieza'] && y.mes > 0 && (!mesVista || y.mes === mesVista)).sort((a, b) => b.mes - a.mes)[0];
       if (mm) {
         const tags = el('div', 'pz-rtags'); const tg = (t) => tags.append(el('span', 'pz-rtag', t));
         if (mm.plat === 'TikTok' && mm.gancho != null && mm.gancho < 0.2) tg('Gancho débil');
@@ -1755,7 +1765,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
       const m = pz.find((y) => y.plat === x['Plataforma'] && y.crea === x['Pieza'] && (y.link || y.thumb)); const tv = thumbEl(m || { plat: x['Plataforma'] }, 76); if (tv) { tv.classList.add('pz-rc-th'); c.prepend(tv); } const a = m && linkEl(m, 'Ver la pieza ↗'); if (a) c.append(a);
       cards.append(c);
     }
-    if (!all.length) cards.append(el('div', 'pz-empty', recoCamp ? 'Esta semana no hay piezas de esta campaña por debajo del benchmark. Tocá ✕ arriba para ver todas.' : 'No hay recomendaciones para este filtro.'));
+    if (!all.length) cards.append(el('div', 'pz-empty', recoCamp ? 'No hay piezas de esta campaña para mejorar en este período. Tocá ✕ arriba para ver todas.' : 'No hay recomendaciones para ' + (mesSel ? MES[mesSel].toLowerCase() : 'este filtro') + '. Probá con otro mes arriba.'));
     recoFocus = null;
   }
   function drawFicha(pz, ret) {
@@ -2126,7 +2136,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   dash.onData(() => {
     const obj = rowsOf('objetivos'), camp = rowsOf('campanas_base'), plats = rowsOf('plataformas'), p = P();
     const est0 = rowsOf('estado');
-    if (!mesInit && est0) { mesInit = true; const mx = d3.max(est0, (r) => r.mes); if (p.mes === 0 && (!location.hash || location.hash === '#revisar') && mx) { set({ mes: mx }); return; } }
+    if (!mesInit && est0) { mesInit = true; const mx = d3.max(est0, (r) => r.mes); if (p.mes === 0 && (!location.hash || location.hash === '#revisar' || location.hash.startsWith('#recos')) && mx) { set({ mes: mx }); return; } }
     drawChrome(obj, plats); drawTakeaway(obj); drawBench(obj);
     if (p.vista === 'activas') drawActivas();
     if (p.vista === 'campanas') { drawObjCards(obj); drawScores(rowsOf('scores'), rowsOf('piezas')); drawCampChips(obj); drawCamps(camp); }
