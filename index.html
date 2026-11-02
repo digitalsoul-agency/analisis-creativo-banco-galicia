@@ -1702,7 +1702,9 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
     let rojasP = [], extra = [];
     if (recoCamp) {
       const cb = rowsOf('campanas_base') || [], byId = new Map(cb.map((r) => [r.id, r]));
-      const cc = (rowsOf('campanias') || []).filter((c) => c.concepto === recoCamp && c.mes > 0).sort((a, b) => b.mes - a.mes)[0];
+      const ccAll = rowsOf('campanias') || [], mesAct = Math.max(0, ...ccAll.map((c) => c.mes || 0));
+      const cc = ccAll.find((c) => c.concepto === recoCamp && c.mes === mesAct);
+      if (!cc && mesAct) { const box = el('div', 'pz-rred'); box.style.borderLeftColor = '#8a8494'; box.append(el('div', 'lbl', 'Esta campaña no tiene actividad en ' + MES[mesAct].toLowerCase()), el('div', '', 'Abajo quedan las recomendaciones de su último período activo.')); cards.append(box); }
       if (cc) {
         rojasP = cc.subs.filter((s) => s.st === 'rojo').map((s) => ({ ...s, b: byId.get(s.ref), mes: cc.mes }));
         if (rojasP.length) {
