@@ -42,7 +42,8 @@
     for (let i = 1; i < v.length; i++) { const r = v[i], o = {}; cols.forEach((c, j) => { const x = idx[j] < 0 ? '' : (r[idx[j]] ?? ''); o[c] = NUM.test(x) ? parseFloat(x.replace(',', '.')) : x; });
       const imp = o.Impressions; if (typeof imp !== 'number' || imp <= 0) { if (name !== 'youtube' || !o['Video completions']) continue; } out.push(o); } return out; };
   const waitD3 = () => new Promise((res) => { const t = () => (window.d3 ? res() : setTimeout(t, 50)); t(); });
-  waitD3().then(() => Promise.all(Object.entries(TABS).map(([n, [g]]) => fetch(SHEET + g, { cache: 'no-store' }).then((r) => { if (!r.ok) throw new Error(r.status); return r.text(); }).then((t) => [n, conv(n, t)]).catch((e) => { if (n === 'recos') return [n, []]; throw e; }))))
+  const getCsv = (u, n = 3) => fetch(u, { cache: 'no-store' }).then((r) => { if (!r.ok) throw new Error(r.status); return r.text(); }).catch((e) => n > 1 ? new Promise((ok) => setTimeout(ok, 1500)).then(() => getCsv(u, n - 1)) : Promise.reject(e));
+  waitD3().then(() => Promise.all(Object.entries(TABS).map(([n, [g]]) => getCsv(SHEET + g).then((t) => [n, conv(n, t)]).catch((e) => { if (n === 'recos') return [n, []]; throw e; }))))
     .then((all) => { raw = Object.fromEntries(all); status = 'ok'; const u = document.getElementById('upd'); if (u) u.textContent = 'Datos en vivo de la planilla · leídos el ' + new Date().toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }); fire(); }).catch(() => { status = 'error'; fire(); });
 })();
 </script>
@@ -1691,8 +1692,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   function drawRecos() {
     const rows = recoRows(), cards = $('#reco-cards'), fil = $('#reco-fil');
     cards.replaceChildren(); fil.replaceChildren();
-    if (!rows.length) { cards.append(el('div', 'pz-empty', 'Todavía no hay recomendaciones cargadas.')); return; }
-    const fecha = rows[0]['Actualizado'];
+    const fecha = rows.length ? rows[0]['Actualizado'] : '—';
     $('#reco-sub').textContent = `Piezas del mes elegido arriba. Primero, las de las campañas que están en rojo en "Campañas activas". Después, piezas que rinden por debajo del benchmark aunque su campaña venga bien. Revisión del ${fecha}.`;
     for (const k of [null, 'TikTok', 'Meta', 'YouTube']) { const n = rows.filter((x) => !k || x['Plataforma'] === k).length; if (k && !n) continue; const b = el('button', '', k || 'Todas'); b.setAttribute('aria-pressed', String(recoPlat === k)); b.addEventListener('click', () => { recoPlat = k; drawRecos(); }); fil.append(b); }
     const pz = rowsOf('piezas') || [];
