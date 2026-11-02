@@ -137,7 +137,7 @@ dash.calc("creativos", { inputs: ["tiktok", "meta", "yt_creativos", "youtube"], 
   const objYT = (io, crea) => (/VIEWS/.test(io) ? (/SHORT/.test(crea) ? 'Views Shorts' : 'Views') : /DEMAND-GEN|TRAFICO/.test(io) ? 'Tráfico' : 'Alcance');
   const fmtMeta = (a) => { const t = String(a).split('_')[1] || ''; return t === 'CARROUSEL' ? 'CARRUSEL' : ['VIDEO', 'IMAGEN', 'CARRUSEL', 'GIF'].includes(t) ? t : 'OTRO'; };
   const fmtYT = (a) => (/SHORT/.test(a) ? 'SHORT' : /BUMPER/.test(a) ? 'BUMPER' : /IN-?STREAM/.test(a) ? 'IN-STREAM' : /CARR?OUSEL/.test(a) ? 'CARRUSEL' : /VIDEO/.test(a) ? 'VIDEO' : 'OTRO');
-  const nameTT = (a) => { const s = String(a); const i = s.lastIndexOf('TIK TOK_VIDEO_'); return i >= 0 ? s.slice(i + 14) : s; };
+  const nameTT = (a) => { const s = String(a); const i = s.lastIndexOf('TIK TOK_VIDEO_'); return (i >= 0 ? s.slice(i + 14) : s).replace(/^FB-IG_(VIDEO|IMAGEN|CARROUSEL|CARRUSEL|GIF)_/, ''); };
   const nameMeta = (a) => String(a).replace(/^FB-IG_(VIDEO|IMAGEN|CARROUSEL|CARRUSEL|GIF)_/, '');
   const ioCost = new Map();
   for (const r of youtube) {
@@ -1673,7 +1673,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   window.addEventListener('hashchange', () => { if (location.hash.startsWith('#recos:')) { recoCamp = decodeURIComponent(location.hash.slice(7)); if (P().vista === 'recos') drawRecos(); else set({ vista: 'recos' }); } });
   const recoRows = () => { const r = rowsOf('recos'); return Array.isArray(r) ? r.filter((x) => x && x['Pieza']) : []; };
   const recoFor = (r) => recoRows().find((x) => x['Plataforma'] === r.plat && x['Pieza'] === r.crea) || null;
-  const shortName = (plat, crea) => { const s = String(crea); if (plat === 'TikTok') { const i = s.lastIndexOf('TIK TOK_'); return (i >= 0 ? s.slice(i + 8) : s).replace(/^VIDEO_/, '').replace(/-/g, ' '); } return s.replace(/^FB-IG_(VIDEO|IMAGEN|CARROUSEL|CARRUSEL|GIF)_/, '').replace(/[-_]/g, ' '); };
+  const shortName = (plat, crea) => { const s = String(crea); if (plat === 'TikTok') { const i = s.lastIndexOf('TIK TOK_'); return (i >= 0 ? s.slice(i + 8) : s).replace(/^FB-IG_/, '').replace(/^VIDEO_/, '').replace(/-/g, ' '); } return s.replace(/^FB-IG_(VIDEO|IMAGEN|CARROUSEL|CARRUSEL|GIF)_/, '').replace(/[-_]/g, ' '); };
   const autoReco = (y) => {
     const pz = rowsOf('piezas') || [], tips = [];
     const pares = pz.filter((z) => z.plat === y.plat && z.obj === y.obj && z.mes === y.mes && z.imp >= 10000 && z.score != null);
