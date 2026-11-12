@@ -40,6 +40,7 @@
     youtube: [975957291, ['Date','Campaign','Insertion order','Impressions','Video completions','Clicks','Revenue']],
     yt_creativos: [359190814, ['Month','Campaign','Insertion order','TrueView Ad name','Impressions','Views']],
     recos: [1760490960, null] };
+  TABS.meta_rec = [1112026111, TABS.meta[1]];
   const NUM = /^-?\d+(,\d+)?$/;
   const conv = (name, text) => { const v = d3.csvParseRows(text.replace(/\r/g, '')); if (!TABS[name][1]) { const h = v[0] || []; return v.slice(1).filter((r) => r.some((c) => c)).map((r) => Object.fromEntries(h.map((c, k) => [c, r[k] ?? '']))); } const head = v[0], cols = TABS[name][1], idx = cols.map((c) => head.indexOf(c)), out = [];
     for (let i = 1; i < v.length; i++) { const r = v[i], o = {}; cols.forEach((c, j) => { const x = idx[j] < 0 ? '' : (r[idx[j]] ?? ''); o[c] = NUM.test(x) ? parseFloat(x.replace(',', '.')) : x; });
@@ -50,8 +51,8 @@
   msg('Cargando datos de la planilla…');
   const getCsv = (u, n = 3) => { const ac = new AbortController(); const to = setTimeout(() => ac.abort(), 30000); return fetch(u, { cache: 'no-store', signal: ac.signal }).then((r) => { if (!r.ok) throw new Error(r.status); return r.text(); }).finally(() => clearTimeout(to)); };
   const getCsvR = (u, n = 3) => getCsv(u).catch((e) => n > 1 ? new Promise((ok) => setTimeout(ok, 1500)).then(() => getCsvR(u, n - 1)) : Promise.reject(e));
-  waitD3().then(() => Promise.all(Object.entries(TABS).map(([n, [g]]) => getCsvR(SHEET + g).then((t) => [n, conv(n, t)]).catch((e) => { if (n === 'recos') return [n, []]; throw e; }))))
-    .then((all) => { raw = Object.fromEntries(all); status = 'ok'; const u = document.getElementById('upd'); if (u) u.textContent = 'Datos en vivo de la planilla · leídos el ' + new Date().toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }); fire(); }).catch(() => { status = 'error'; fire(); msg('No se pudieron leer los datos de la planilla (puede ser la conexión o que Google tardó demasiado).', true); });
+  waitD3().then(() => Promise.all(Object.entries(TABS).map(([n, [g]]) => getCsvR(SHEET + g).then((t) => [n, conv(n, t)]).catch((e) => { if (n === 'recos' || n === 'meta_rec') return [n, []]; throw e; }))))
+    .then((all) => { raw = Object.fromEntries(all); if (raw.meta_rec && raw.meta_rec.length) { const th = new Map(); for (const r of raw.meta) if (r['Ad creative image URL'] || r['Ad creative thumbnail URL']) th.set(r['Ad name'], r); for (const r of raw.meta_rec) { const o = th.get(r['Ad name']); if (o) { r['Ad creative image URL'] = o['Ad creative image URL']; r['Ad creative thumbnail URL'] = o['Ad creative thumbnail URL']; } } const ms = new Set(raw.meta_rec.map((r) => r.Month)); raw.meta = raw.meta.filter((r) => !ms.has(r.Month)).concat(raw.meta_rec); } delete raw.meta_rec; status = 'ok'; const u = document.getElementById('upd'); if (u) u.textContent = 'Datos en vivo de la planilla · leídos el ' + new Date().toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }); fire(); }).catch(() => { status = 'error'; fire(); msg('No se pudieron leer los datos de la planilla (puede ser la conexión o que Google tardó demasiado).', true); });
 })();
 </script>
 </head><body><div id="dash-root">
