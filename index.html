@@ -16,6 +16,9 @@
 .dash-skeleton { min-height: 120px; border-radius: 14px; background: linear-gradient(90deg, var(--color-panel), var(--color-border-line), var(--color-panel)); background-size: 200% 100%; animation: sk 1.4s infinite; }
 @keyframes sk { to { background-position: -200% 0; } }
 .pz-updated { text-align: center; color: var(--color-fg-muted); font-size: 12px; margin-top: 24px; }
+.pz-miss { display: block; margin-top: 8px; font-size: .85em; color: var(--color-warn, #b7791f); }
+.pz-retry { margin-left: 8px; padding: 6px 14px; border-radius: 99px; border: 1px solid currentColor; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 14px; }
+.pz-subio { display: block; font-size: 10.5px; opacity: .7; margin-top: 2px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 <script>
 (() => {
@@ -42,9 +45,13 @@
     for (let i = 1; i < v.length; i++) { const r = v[i], o = {}; cols.forEach((c, j) => { const x = idx[j] < 0 ? '' : (r[idx[j]] ?? ''); o[c] = NUM.test(x) ? parseFloat(x.replace(',', '.')) : x; });
       const imp = o.Impressions; if (typeof imp !== 'number' || imp <= 0) { if (name !== 'youtube' || !o['Video completions']) continue; } out.push(o); } return out; };
   const waitD3 = () => new Promise((res) => { const t = () => (window.d3 ? res() : setTimeout(t, 50)); t(); });
-  const getCsv = (u, n = 3) => fetch(u, { cache: 'no-store' }).then((r) => { if (!r.ok) throw new Error(r.status); return r.text(); }).catch((e) => n > 1 ? new Promise((ok) => setTimeout(ok, 1500)).then(() => getCsv(u, n - 1)) : Promise.reject(e));
-  waitD3().then(() => Promise.all(Object.entries(TABS).map(([n, [g]]) => getCsv(SHEET + g).then((t) => [n, conv(n, t)]).catch((e) => { if (n === 'recos') return [n, []]; throw e; }))))
-    .then((all) => { raw = Object.fromEntries(all); status = 'ok'; const u = document.getElementById('upd'); if (u) u.textContent = 'Datos en vivo de la planilla · leídos el ' + new Date().toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }); fire(); }).catch(() => { status = 'error'; fire(); });
+  window.sgn = (d) => (d == null || Math.abs(d) < 0.05 ? 0 : Math.sign(d));
+  const msg = (html, retry) => { const go = () => { const t = document.getElementById('takeaway'), u = document.getElementById('upd'); if (u) u.textContent = html; if (retry && t) { t.replaceChildren(html + ' '); const b = document.createElement('button'); b.textContent = 'Reintentar'; b.className = 'pz-retry'; b.addEventListener('click', () => location.reload()); t.append(b); } }; document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', go) : go(); };
+  msg('Cargando datos de la planilla…');
+  const getCsv = (u, n = 3) => { const ac = new AbortController(); const to = setTimeout(() => ac.abort(), 30000); return fetch(u, { cache: 'no-store', signal: ac.signal }).then((r) => { if (!r.ok) throw new Error(r.status); return r.text(); }).finally(() => clearTimeout(to)); };
+  const getCsvR = (u, n = 3) => getCsv(u).catch((e) => n > 1 ? new Promise((ok) => setTimeout(ok, 1500)).then(() => getCsvR(u, n - 1)) : Promise.reject(e));
+  waitD3().then(() => Promise.all(Object.entries(TABS).map(([n, [g]]) => getCsvR(SHEET + g).then((t) => [n, conv(n, t)]).catch((e) => { if (n === 'recos') return [n, []]; throw e; }))))
+    .then((all) => { raw = Object.fromEntries(all); status = 'ok'; const u = document.getElementById('upd'); if (u) u.textContent = 'Datos en vivo de la planilla · leídos el ' + new Date().toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }); fire(); }).catch(() => { status = 'error'; fire(); msg('No se pudieron leer los datos de la planilla (puede ser la conexión o que Google tardó demasiado).', true); });
 })();
 </script>
 </head><body><div id="dash-root">
@@ -65,7 +72,7 @@ dash.calc("campanas", { inputs: ["tiktok", "meta", "youtube"], title: "Campañas
   const recs = [];
   for (const r of tiktok) {
     const imp = n(r['Impressions']); if (!imp) continue;
-    recs.push({ plat: 'TikTok', mes: n(r['Month']), obj: objTT(r['Campaign objective type'], r['Campaign name']), camp: r['Campaign name'],
+    recs.push({ plat: 'TikTok', rf: r['Campaign objective type'] === 'RF_REACH', mes: n(r['Month']), obj: objTT(r['Campaign objective type'], r['Campaign name']), camp: r['Campaign name'],
       imp, cost: n(r['CPM']) * imp / 1000, clicks: n(r['Clicks']), views: n(r['2-second video views']), vtrn: n(r['6-second video views']),
       eng: n(r['Paid likes']) + n(r['Paid shares']) + n(r['Paid follows']) + n(r['Paid comments']) });
   }
@@ -82,7 +89,8 @@ dash.calc("campanas", { inputs: ["tiktok", "meta", "youtube"], title: "Campañas
   const groups = new Map();
   for (const x of recs) for (const mes of [x.mes, 0]) {
     const k = [x.plat, mes, x.obj, x.camp].join('|');
-    const g = groups.get(k) || { plat: x.plat, mes, obj: x.obj, camp: x.camp, imp: 0, cost: 0, clicks: 0, views: 0, vtrn: 0, eng: 0, clall: 0 };
+    const g = groups.get(k) || { plat: x.plat, mes, obj: x.obj, camp: x.camp, rf: false, imp: 0, cost: 0, clicks: 0, views: 0, vtrn: 0, eng: 0, clall: 0 };
+    if (x.rf) g.rf = true;
     for (const f of ['imp', 'cost', 'clicks', 'views', 'vtrn', 'eng', 'clall']) g[f] += x[f] || 0;
     groups.set(k, g);
   }
@@ -90,9 +98,12 @@ dash.calc("campanas", { inputs: ["tiktok", "meta", "youtube"], title: "Campañas
     CPE: g.eng ? g.cost / g.eng : null, ER: g.imp ? g.eng / g.imp : null, VTR: g.imp && g.vtrn ? g.vtrn / g.imp : null, CTR: g.imp ? g.clicks / g.imp : null, 'Interacción': g.imp ? (g.clall || 0) / g.imp : null })[m];
   const ytA = [...groups.values()].filter((g) => g.plat === 'YouTube' && g.obj === 'Alcance' && g.mes === 0);
   const ytAvg = ytA.reduce((a, g) => a + g.imp, 0) ? ytA.reduce((a, g) => a + g.vtrn, 0) / ytA.reduce((a, g) => a + g.imp, 0) : null;
+  const rfG = [...groups.values()].filter((g) => g.rf && g.mes === 0);
+  const rfCPM = rfG.reduce((a, g) => a + g.imp, 0) ? rfG.reduce((a, g) => a + g.cost, 0) / rfG.reduce((a, g) => a + g.imp, 0) * 1000 : null;
   let i = 0;
   return [...groups.values()].map((g) => {
-    const [k1, k1b, k2, k2b0] = BENCH[g.plat + '|' + g.obj] || ['CPM', null, 'CTR', null];
+    const [k1, k1b0, k2, k2b0] = BENCH[g.plat + '|' + g.obj] || ['CPM', null, 'CTR', null];
+    const k1b = g.rf && k1 === 'CPM' && rfCPM ? rfCPM : k1b0;
     const k2b = g.plat === 'YouTube' && g.obj === 'Alcance' ? ytAvg : k2b0;
     const k1v = val(k1, g), k2v = val(k2, g);
     const d1 = k1v != null && k1b ? (k1b - k1v) / k1b : null, d2 = k2v != null && k2b ? (k2v - k2b) / k2b : null;
@@ -107,7 +118,7 @@ dash.calc("campanas_base", { inputs: ["campanas"], title: "Campañas unificadas"
   const groups = new Map(), months = new Map();
   for (const c of campanas) {
     const b = base(c.camp), k = [c.plat, c.mes, c.obj, b].join('|');
-    const g = groups.get(k) || { plat: c.plat, mes: c.mes, obj: c.obj, base: b, k1: c.k1, k1b: c.k1b, k2: c.k2, k2b: c.k2b, imp: 0, cost: 0, clicks: 0, views: 0, vtrn: 0, eng: 0, clall: 0, piezas: 0 };
+    const g = groups.get(k) || { plat: c.plat, mes: c.mes, obj: c.obj, base: b, rf: c.rf, k1: c.k1, k1b: c.k1b, k2: c.k2, k2b: c.k2b, imp: 0, cost: 0, clicks: 0, views: 0, vtrn: 0, eng: 0, clall: 0, piezas: 0 };
     for (const f of ['imp', 'cost', 'clicks', 'views', 'vtrn', 'eng', 'clall']) g[f] += c[f] || 0;
     if (c.mes > 0) { const mk = [c.plat, c.obj, b].join('|'); const s = months.get(mk) || new Set(); s.add(c.mes); months.set(mk, s); }
     groups.set(k, g);
@@ -148,7 +159,7 @@ dash.calc("creativos", { inputs: ["tiktok", "meta", "yt_creativos", "youtube"], 
   const recs = [];
   for (const r of tiktok) {
     const imp = n(r['Impressions']); if (!imp) continue;
-    recs.push({ plat: 'TikTok', mes: n(r['Month']), obj: objTT(r['Campaign objective type'], r['Campaign name']), camp: r['Campaign name'], crea: r['Ad name'],
+    recs.push({ plat: 'TikTok', rf: r['Campaign objective type'] === 'RF_REACH', mes: n(r['Month']), obj: objTT(r['Campaign objective type'], r['Campaign name']), camp: r['Campaign name'], crea: r['Ad name'],
       nombre: nameTT(r['Ad name']), formato: 'VIDEO', est: false, link: r['Post URL'] || '', thumb: r['Video thumbnail URL'] || '',
       v2: n(r['2-second video views']), v6: n(r['6-second video views']), q25: n(r['Video views at 25%']), q50: n(r['Video views at 50%']), q75: n(r['Video views at 75%']), q100: n(r['Video views at 100%']),
       imp, cost: n(r['CPM']) * imp / 1000, clicks: n(r['Clicks']), views: n(r['2-second video views']), vtrn: n(r['6-second video views']),
@@ -171,7 +182,7 @@ dash.calc("creativos", { inputs: ["tiktok", "meta", "yt_creativos", "youtube"], 
   const groups = new Map();
   for (const x of recs) for (const mes of [x.mes, 0]) {
     const k = [x.plat, mes, x.obj, x.camp, x.crea].join('|');
-    const g = groups.get(k) || { plat: x.plat, mes, obj: x.obj, camp: x.camp, crea: x.crea, nombre: x.nombre, formato: x.formato, est: x.est, link: '', thumb: '', imp: 0, cost: 0, clicks: 0, views: 0, vtrn: 0, eng: 0, clall: 0, v2: 0, v6: 0, q25: 0, q50: 0, q75: 0, q100: 0, m25: 0, m50: 0, m75: 0, m100: 0 };
+    const g = groups.get(k) || { rf: !!x.rf, plat: x.plat, mes, obj: x.obj, camp: x.camp, crea: x.crea, nombre: x.nombre, formato: x.formato, est: x.est, link: '', thumb: '', imp: 0, cost: 0, clicks: 0, views: 0, vtrn: 0, eng: 0, clall: 0, v2: 0, v6: 0, q25: 0, q50: 0, q75: 0, q100: 0, m25: 0, m50: 0, m75: 0, m100: 0 };
     for (const f of ['imp', 'cost', 'clicks', 'views', 'vtrn', 'eng', 'clall', 'v2', 'v6', 'q25', 'q50', 'q75', 'q100', 'm25', 'm50', 'm75', 'm100']) g[f] += x[f] || 0;
     if (!g.link && typeof x.link === 'string' && /^https:\/\//.test(x.link)) g.link = x.link;
     if (typeof x.thumb === 'string' && /^https?:\/\//.test(x.thumb)) g.thumb = x.thumb;
@@ -181,9 +192,12 @@ dash.calc("creativos", { inputs: ["tiktok", "meta", "yt_creativos", "youtube"], 
     CPE: g.eng ? g.cost / g.eng : null, ER: g.imp ? g.eng / g.imp : null, VTR: g.imp && g.vtrn ? g.vtrn / g.imp : null, CTR: g.imp ? g.clicks / g.imp : null, 'Interacción': g.imp ? (g.clall || 0) / g.imp : null })[m];
   const ytA = [...groups.values()].filter((g) => g.plat === 'YouTube' && g.obj === 'Alcance' && g.mes === 0);
   const ytAvg = ytA.reduce((a, g) => a + g.imp, 0) ? ytA.reduce((a, g) => a + g.vtrn, 0) / ytA.reduce((a, g) => a + g.imp, 0) : null;
+  const rfG = [...groups.values()].filter((g) => g.rf && g.mes === 0);
+  const rfCPM = rfG.reduce((a, g) => a + g.imp, 0) ? rfG.reduce((a, g) => a + g.cost, 0) / rfG.reduce((a, g) => a + g.imp, 0) * 1000 : null;
   let i = 0;
   return [...groups.values()].map((g) => {
-    const [k1, k1b, k2, k2b0] = BENCH[g.plat + '|' + g.obj] || ['CPM', null, 'CTR', null];
+    const [k1, k1b0, k2, k2b0] = BENCH[g.plat + '|' + g.obj] || ['CPM', null, 'CTR', null];
+    const k1b = g.rf && k1 === 'CPM' && rfCPM ? rfCPM : k1b0;
     const k2b = g.plat === 'YouTube' && g.obj === 'Alcance' ? ytAvg : k2b0;
     const k1v = val(k1, g), k2v = val(k2, g);
     const d1 = k1v != null && k1b ? (k1b - k1v) / k1b : null, d2 = k2v != null && k2b ? (k2v - k2b) / k2b : null;
@@ -242,9 +256,11 @@ dash.calc("objetivos", { inputs: ["campanas_base", "creativos"], title: "Objetiv
   for (const c of campanas_base) {
     const k = [c.plat, c.mes, c.obj].join('|');
     const g = groups.get(k) || { plat: c.plat, mes: c.mes, obj: c.obj, k1: c.k1, k1b: c.k1b, k2: c.k2, k2b: c.k2b, imp: 0, cost: 0, clicks: 0, views: 0, vtrn: 0, eng: 0, clall: 0, campanas: 0, campArriba: 0, campAbajo: 0, creas: 0, creaArriba: 0, creaAbajo: 0 };
+    if (!c.rf && !g.nr) { g.k1b = c.k1b; g.nr = true; } if (c.rf && c.mes === 0) g.rfb = c.k1b;
+    if (!c.rf) { g.impNR = (g.impNR || 0) + (c.imp || 0); g.costNR = (g.costNR || 0) + (c.cost || 0); }
     for (const f of ['imp', 'cost', 'clicks', 'views', 'vtrn', 'eng', 'clall']) g[f] += c[f] || 0;
     g.campanas += 1;
-    const s = (c.d1 == null ? 0 : Math.sign(c.d1)) + (c.d2 == null ? 0 : Math.sign(c.d2));
+    const s = sgn(c.d1) + sgn(c.d2);
     if (s > 0) g.campArriba += 1; else if (s < 0) g.campAbajo += 1;
     groups.set(k, g);
   }
@@ -252,14 +268,14 @@ dash.calc("objetivos", { inputs: ["campanas_base", "creativos"], title: "Objetiv
     const g = groups.get([c.plat, c.mes, c.obj].join('|')) || groups.get([c.plat, c.mes, c.obj.replace(' Shorts', '')].join('|'));
     if (!g) continue;
     g.creas += 1;
-    const s = (c.d1 == null ? 0 : Math.sign(c.d1)) + (c.d2 == null ? 0 : Math.sign(c.d2));
+    const s = sgn(c.d1) + sgn(c.d2);
     if (s > 0) g.creaArriba += 1; else if (s < 0) g.creaAbajo += 1;
   }
   const val = (m, g) => ({ CPM: g.imp ? g.cost / g.imp * 1000 : null, CPV: g.views ? g.cost / g.views : null, CPC: g.clicks ? g.cost / g.clicks : null,
     CPE: g.eng ? g.cost / g.eng : null, ER: g.imp ? g.eng / g.imp : null, VTR: g.imp && g.vtrn ? g.vtrn / g.imp : null, CTR: g.imp ? g.clicks / g.imp : null, 'Interacción': g.imp ? (g.clall || 0) / g.imp : null })[m];
   let i = 0;
   return [...groups.values()].map((g) => {
-    const k1v = val(g.k1, g), k2v = val(g.k2, g);
+    const k1v = g.k1 === 'CPM' && g.nr ? (g.impNR ? g.costNR / g.impNR * 1000 : null) : val(g.k1, g), k2v = val(g.k2, g);
     return { id: 'o' + i++, ...g, k1v, k2v, d1: k1v != null && g.k1b ? (g.k1b - k1v) / g.k1b : null, d2: k2v != null && g.k2b ? (k2v - g.k2b) / g.k2b : null };
   });
 } });
@@ -332,7 +348,7 @@ dash.calc("atributos", { inputs: ["piezas"], title: "Best practices por atributo
   });
 } });
 dash.calc("estado", { inputs: ["campanas_base"], title: "Semáforo de campañas", description: "Por mes, plataforma y objetivo: cuántas campañas vienen bien (tasa y costo mejor que el benchmark), mixtas o mal (ambas peor), con su inversión.", fn: (campanas_base) => {
-  const st = (c) => { const a = c.d2 == null ? 0 : Math.sign(c.d2), b = c.d1 == null ? 0 : Math.sign(c.d1); const s = a + b; return s > 0 ? 'verde' : s < 0 ? 'rojo' : 'mixta'; };
+  const st = (c) => { const a = sgn(c.d2), b = sgn(c.d1); const pres = (c.d2 != null) + (c.d1 != null), neg = (a < 0) + (b < 0); return neg === 0 && a + b > 0 ? 'verde' : pres && neg === pres ? 'rojo' : 'mixta'; };
   const g = new Map();
   for (const c of campanas_base) {
     for (const plat of ['Todas', c.plat]) for (const obj of ['', c.obj]) {
@@ -378,7 +394,7 @@ dash.calc("campanias", { inputs: ["campanas_base"], title: "Campañas agrupadas"
     const ln = LINES[line] || (/^\d+$/.test(line) ? 'Agro' : pretty(line));
     return { key: (line + '|' + sub).toUpperCase(), linea: ln, nombre: sub ? pretty(sub) : ln };
   };
-  const st = (c) => { const a = c.d2 == null ? 0 : Math.sign(c.d2), b = c.d1 == null ? 0 : Math.sign(c.d1); const s = a + b; return s > 0 ? 'verde' : s < 0 ? 'rojo' : 'mixta'; };
+  const st = (c) => { const a = sgn(c.d2), b = sgn(c.d1); const pres = (c.d2 != null) + (c.d1 != null), neg = (a < 0) + (b < 0); return neg === 0 && a + b > 0 ? 'verde' : pres && neg === pres ? 'rojo' : 'mixta'; };
   const g = new Map();
   for (const c of campanas_base) {
     const k = concept(c.base);
@@ -1074,7 +1090,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
       <div class="pz-notes">
         <div class="pz-kicker">Cómo leerlo</div>
         <div><b>Costo</b> (CPM, CPV, CPC, CPE): más bajo que el benchmark es mejor. <b>Tasa</b> (ER, VTR, CTR): más alta es mejor. Cada chip dice si la tasa está por encima o por debajo del benchmark, y si el costo está por encima o por debajo del costo promedio. Verde = bien (tasa por encima o costo por debajo), rojo = mal.</div>
-        <div><b>TikTok</b>: inversión = CPM × impresiones · CPV sobre views de 2 s · VTR = views de 6 s / impresiones · ER = (likes + comentarios + shares + follows) / impresiones.</div>
+        <div><b>TikTok</b>: las campañas de Reach &amp; Frequency (R&amp;F) se compran a precio fijo, así que su CPM se compara con el promedio R&amp;F de la cuenta y no con el de subasta · inversión = CPM × impresiones · CPV sobre views de 2 s · VTR = views de 6 s / impresiones · ER = (likes + comentarios + shares + follows) / impresiones.</div>
         <div><b>Meta</b>: Interacción = clics totales (reacciones, comentarios, compartidos, clics al perfil, al enlace y a la pieza) / impresiones. No usamos "interacciones con la página" porque cuenta las reproducciones de video de 3 s e infla los videos. Su benchmark es el promedio de la cuenta en 2026: 0,15% en Alcance y 1,1% en Engagement. CPC y CTR sobre clics al enlace.</div>
         <div><b>YouTube</b>: en campañas, CPV y VTR sobre reproducciones completas. En piezas, VTR = views / impresiones y la inversión es estimada según el peso de cada pieza en su IO.</div>
         <div class="pz-scoredef"><b>Score creativo (0 a 100)</b>
@@ -1108,7 +1124,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   const big = (v) => v == null ? '—' : nf({ notation: 'compact', maximumFractionDigits: 1 }).format(v);
   const pct = (v) => v == null ? '—' : nf({ style: 'percent', maximumFractionDigits: v < 0.01 ? 2 : 1, minimumFractionDigits: v < 0.01 ? 2 : 1 }).format(v);
   const fmtK = (k, v) => COST[k] ? (k === 'CPM' ? money(v, 0) : money(v)) : pct(v);
-  const badge = (d, b, k) => { const c = !!COST[k]; const s = el('span', 'pz-badge ' + (d == null ? 'na' : d >= 0 ? 'ok' : 'bad')); const up = c ? d < 0 : d >= 0; const ref = c ? 'del costo promedio' : 'del benchmark'; s.textContent = d == null ? (b == null ? 'sin bench' : '—') : nf({ maximumFractionDigits: 0 }).format(Math.abs(d * 100)) + '% ' + (up ? 'por encima ' : 'por debajo ') + ref; if (d != null) s.title = (d >= 0 ? 'Bien: ' : 'Mal: ') + (c ? (up ? 'cuesta más que el promedio' : 'cuesta menos que el promedio') : (up ? 'rinde más que el benchmark' : 'rinde menos que el benchmark')); return s; };
+  const badge = (d, b, k) => { const c = !!COST[k]; if (d != null && Math.abs(d) < 0.05) { const s0 = el('span', 'pz-badge na', 'en línea con ' + (c ? 'el costo promedio' : 'el benchmark')); s0.title = 'A menos de 5% del ' + (c ? 'costo promedio' : 'benchmark'); return s0; } const s = el('span', 'pz-badge ' + (d == null ? 'na' : d >= 0 ? 'ok' : 'bad')); const up = c ? d < 0 : d >= 0; const ref = c ? 'del costo promedio' : 'del benchmark'; s.textContent = d == null ? (b == null ? 'sin bench' : '—') : nf({ maximumFractionDigits: 0 }).format(Math.abs(d * 100)) + '% ' + (up ? 'por encima ' : 'por debajo ') + ref; if (d != null) s.title = (d >= 0 ? 'Bien: ' : 'Mal: ') + (c ? (up ? 'cuesta más que el promedio' : 'cuesta menos que el promedio') : (up ? 'rinde más que el benchmark' : 'rinde menos que el benchmark')); return s; };
   const score = (r) => { const a = [r.d1, r.d2].filter((x) => x != null).map((x) => Math.max(-1, Math.min(2, x))); return a.length ? a.reduce((s, x) => s + x, 0) / a.length : null; };
   const objOrder = ['Alcance', 'Views', 'Views Shorts', 'Tráfico', 'Engagement', 'Leads'];
   const byObj = (a, b) => objOrder.indexOf(a) - objOrder.indexOf(b);
@@ -1316,7 +1332,10 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   function drawTakeaway(obj) {
     const t = $('#takeaway'); const p = P();
     t.replaceChildren();
-    if (p.vista === 'activas') { const cs = rowsOf('campSema'); const r = cs && cs.find((x) => x.mes === p.mes); if (!r) { t.textContent = '—'; return; } const B = (x) => Object.assign(el('b'), { textContent: x }); t.append(p.mes === 0 ? 'En lo que va de 2026 hubo ' : `En ${MES[p.mes].toLowerCase()} hay `, B(`${r.n} campañas activas`), ': ', B(`${r.verde} vienen bien`), ', ', B(`${r.mixta} mixtas`), ' y ', B(`${r.rojo} necesitan atención`), '.'); return; }
+    if (p.vista === 'activas') { const cs = rowsOf('campSema'); const r = cs && cs.find((x) => x.mes === p.mes); if (!r) { t.textContent = '—'; return; } const B = (x) => Object.assign(el('b'), { textContent: x }); t.append(p.mes === 0 ? 'En lo que va de 2026 hubo ' : `En ${MES[p.mes].toLowerCase()} hay `, B(`${r.n} ${r.n === 1 ? 'campaña activa' : 'campañas activas'}`), ': ', B(`${r.verde} ${r.verde === 1 ? 'viene' : 'vienen'} bien`), ', ', B(`${r.mixta} ${r.mixta === 1 ? 'mixta' : 'mixtas'}`), ' y ', B(`${r.rojo} ${r.rojo === 1 ? 'necesita' : 'necesitan'} atención`), '.');
+      const es = rowsOf('estado') || [];
+      if (p.mes > 0) for (const pl of ['TikTok', 'Meta', 'YouTube']) { const ms = es.filter((x) => x.plat === pl && x.mes > 0).map((x) => x.mes); const last = ms.length ? Math.max(...ms) : 0; if (last && last < p.mes) { const w = el('span', 'pz-miss', ` ${pl} todavía no tiene datos de ${MES[p.mes].toLowerCase()} en la planilla (llegan hasta ${MES[last].toLowerCase()}), así que no aparece en este mes.`); t.append(w); } }
+      return; }
     if (!obj) { t.textContent = '—'; return; }
     const rows = obj.filter((r) => r.plat === p.plat && r.mes === p.mes && (r.k1b != null || r.k2b != null));
     const per = p.mes === 0 ? 'En lo que va de 2026' : 'En ' + MES[p.mes].toLowerCase();
@@ -1326,7 +1345,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
     if (!rows.length) { t.textContent = `${per}, ${p.plat} no tiene inversión con benchmark.`; return; }
     t.append(`${per}, en ${p.plat}`);
     if (best) t.append(', el objetivo que mejor engancha es ', B(best.obj), ` (${best.k2} ${fmtK(best.k2, best.k2v)} contra ${fmtK(best.k2, best.k2b)} de benchmark)`);
-    if (worst && worst.d1 < 0) t.append(' y el que más se encarece es ', B(worst.obj), ` (${worst.k1} ${fmtK(worst.k1, worst.k1v)} contra ${fmtK(worst.k1, worst.k1b)})`);
+    if (worst && sgn(worst.d1) < 0) t.append(' y el que más se encarece es ', B(worst.obj), ` (${worst.k1} ${fmtK(worst.k1, worst.k1v)} contra ${fmtK(worst.k1, worst.k1b)})`);
     t.append('.');
   }
 
@@ -1539,7 +1558,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
     if (!rows.length) { box.append(el('div', 'pz-empty', 'Sin datos por formato.')); return; }
     $('#fmt-sub').textContent = `${rows[0].k2} de cada formato en ${o}, contra el benchmark. Incluye todas las campañas del objetivo.`;
     for (const r of rows) {
-      const tone = r.d2 == null ? '' : r.d2 >= 0 ? 'ok' : 'bad';
+      const tone = sgn(r.d2) === 0 ? '' : r.d2 > 0 ? 'ok' : 'bad';
       const row = el('div', 'pz-frow');
       const n = el('div'); n.append(el('span', 'pz-tag', r.formato), el('div', 'pz-muted', r.piezas + (r.piezas === 1 ? ' pieza' : ' piezas')));
       const v = el('div', 'pz-kc');
@@ -1572,13 +1591,16 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   function drawBench(obj) {
     const box = $('#bench'); const p = P(); box.replaceChildren();
     if (!obj) return;
-    const rows = obj.filter((r) => r.plat === p.plat && r.mes === 0).sort((a, b) => byObj(a.obj, b.obj));
+    const todas = p.vista === 'activas' || p.vista === 'recos';
+    const pO = { TikTok: 0, Meta: 1, YouTube: 2 };
+    const rows = obj.filter((r) => (todas || r.plat === p.plat) && r.mes === 0 && (r.k1b != null || r.k2b != null)).sort((a, b) => pO[a.plat] - pO[b.plat] || byObj(a.obj, b.obj));
     for (const r of rows) {
       const d = el('div', 'pz-brow');
-      d.append(Object.assign(el('b'), { textContent: r.obj }), el('span', '', `${r.k1} ${r.k1b == null ? '—' : '≤ ' + fmtK(r.k1, r.k1b)}   ·   ${r.k2} ${r.k2b == null ? '—' : '≥ ' + fmtK(r.k2, r.k2b)}`));
+      d.append(Object.assign(el('b'), { textContent: (todas ? r.plat + ' · ' : '') + r.obj }), el('span', '', `${r.k1} ${r.k1b == null ? '—' : '≤ ' + fmtK(r.k1, r.k1b)}   ·   ${r.k2} ${r.k2b == null ? '—' : '≥ ' + fmtK(r.k2, r.k2b)}`));
       box.append(d);
+      if (r.rfb) { const d2 = el('div', 'pz-brow'); d2.append(Object.assign(el('b'), { textContent: (todas ? r.plat + ' · ' : '') + r.obj + ' R&F' }), el('span', '', `CPM ≤ ${fmtK('CPM', r.rfb)} (promedio R&F 2026)   ·   ${r.k2} ${r.k2b == null ? '—' : '≥ ' + fmtK(r.k2, r.k2b)}`)); box.append(d2); }
     }
-    if (p.plat === 'YouTube') { const d = el('div', 'pz-brow'); d.append(Object.assign(el('b'), { textContent: 'Views Shorts (piezas)' }), el('span', '', 'VTR ≥ 2%')); box.append(d); }
+    if (p.plat === 'YouTube' || todas) { const d = el('div', 'pz-brow'); d.append(Object.assign(el('b'), { textContent: 'Views Shorts (piezas)' }), el('span', '', 'VTR ≥ 2%')); if (todas) d.firstChild.textContent = 'YouTube · Views Shorts (piezas)'; box.append(d); }
   }
 
   // ---- score overview (home) ----
@@ -1675,7 +1697,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   window.addEventListener('hashchange', () => { if (location.hash === '#recos') { recoCamp = null; if (P().vista === 'recos') drawRecos(); } if (location.hash.startsWith('#recos:')) { recoCamp = decodeURIComponent(location.hash.slice(7)); if (P().vista === 'recos') drawRecos(); else set({ vista: 'recos' }); } });
   const recoRows = () => { const r = rowsOf('recos'); return Array.isArray(r) ? r.filter((x) => x && x['Pieza']) : []; };
   const sameP = (y, x) => y.plat === x['Plataforma'] && y.crea === x['Pieza'] && (!x['Campaña'] || y.camp === x['Campaña']);
-  const malo = (y) => (y.d2 != null && y.d2 < 0) || (y.d1 != null && y.d1 < 0);
+  const malo = (y) => sgn(y.d2) < 0 || sgn(y.d1) < 0;
   const recoFor = (r) => (malo(r) && recoRows().find((x) => sameP(r, x))) || null;
   const shortName = (plat, crea) => { const s = String(crea); if (plat === 'TikTok') { const i = s.lastIndexOf('TIK TOK_'); return (i >= 0 ? s.slice(i + 8) : s).replace(/^FB-IG_/, '').replace(/^VIDEO_/, '').replace(/-/g, ' '); } return s.replace(/^FB-IG_(VIDEO|IMAGEN|CARROUSEL|CARRUSEL|GIF)_/, '').replace(/[-_]/g, ' '); };
   const autoReco = (y) => {
@@ -1684,8 +1706,8 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
     const best = pares.slice().sort((a, b) => b.score - a.score)[0];
     if (y.plat === 'TikTok' && y.gancho != null) { const g = d3.mean(pares.filter((z) => z.gancho != null), (z) => z.gancho); if (g && y.gancho < g) tips.push(`Reforzar los primeros 2 segundos: el gancho es ${pct(y.gancho)} contra ${pct(g)} de promedio. Probar abrir con el beneficio o una cara.`); }
     if (y.plat === 'TikTok' && y.v2 && y.q25 / y.v2 < 0.3) tips.push(`Subir el ritmo del arranque: solo ${pct(y.q25 / y.v2)} de quienes la ven llega al 25% del video. Probar una versión más corta.`);
-    if (y.d2 != null && y.d2 < 0) tips.push(`${y.k2} ${fmtK(y.k2, y.k2v)}, ${Math.round(-y.d2 * 100)}% por debajo del benchmark: probar una versión nueva de la pieza con otro gancho o mensaje.`);
-    if (y.d1 != null && y.d1 < 0) tips.push(`${y.k1} ${fmtK(y.k1, y.k1v)}, ${Math.round(-y.d1 * 100)}% por encima del costo promedio: si la pieza lleva varias semanas, rotarla para bajar el desgaste.`);
+    if (sgn(y.d2) < 0) tips.push(`${y.k2} ${fmtK(y.k2, y.k2v)}, ${Math.round(-y.d2 * 100)}% por debajo del benchmark: probar una versión nueva de la pieza con otro gancho o mensaje.`);
+    if (sgn(y.d1) < 0) tips.push(`${y.k1} ${fmtK(y.k1, y.k1v)}, ${Math.round(-y.d1 * 100)}% por encima del costo promedio: si la pieza lleva varias semanas, rotarla para bajar el desgaste.`);
     if (/VERTICAL/.test(y.crea) && /INSTREAM/.test(y.crea)) tips.push('Hacer una versión horizontal 16:9 para in-stream.');
     return { _auto: true, 'Plataforma': y.plat, 'Objetivo': y.obj, 'Campaña': y.camp, 'Pieza': y.crea, 'Score': y.score ?? '', 'Prioridad': 'Alta', 'Qué cambiar': tips.slice(0, 3).join(' | ') || 'Probar una versión nueva de la pieza.',
       'Referencia': best && best.crea !== y.crea ? `${best.nombre} (score ${best.score})` : '', 'Por qué funciona la referencia': best && best.crea !== y.crea ? `${best.k2} ${fmtK(best.k2, best.k2v)} con el mismo objetivo en ${MES[y.mes].toLowerCase()}.` : '' };
@@ -1757,8 +1779,8 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
         const tags = el('div', 'pz-rtags'); const tg = (t) => tags.append(el('span', 'pz-rtag', t));
         if (mm.plat === 'TikTok' && mm.gancho != null && mm.gancho < 0.2) tg('Gancho débil');
         if (mm.plat === 'TikTok' && mm.v2 && mm.q25 / mm.v2 < 0.25) tg('Se cae rápido');
-        if (mm.d2 != null && mm.d2 < 0) tg((mm.k2 === 'Interacción' ? 'Interacción' : mm.k2) + ' bajo');
-        if (mm.d1 != null && mm.d1 < 0) tg(mm.k1 + ' alto');
+        if (sgn(mm.d2) < 0) tg((mm.k2 === 'Interacción' ? 'Interacción' : mm.k2) + ' bajo');
+        if (sgn(mm.d1) < 0) tg(mm.k1 + ' alto');
         if (/VERTICAL/.test(mm.crea) && /INSTREAM/.test(mm.crea)) tg('Formato vertical en in-stream');
         if (tags.children.length) c.append(tags);
         const bars = el('div', 'pz-rbars');
@@ -1862,7 +1884,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
   const STC = { verde: '#1f9d6b', mixta: '#d39a12', rojo: '#e5484d' };
   const STL = { verde: 'Vienen bien', mixta: 'Mixtas', rojo: 'Necesitan atención' };
   const PLATC = { TikTok: '#111', Meta: '#3b82f6', YouTube: '#ff3040' };
-  const stOf = (c) => { const a = c.d2 == null ? 0 : Math.sign(c.d2), b = c.d1 == null ? 0 : Math.sign(c.d1); const x = a + b; return x > 0 ? 'verde' : x < 0 ? 'rojo' : 'mixta'; };
+  const stOf = (c) => { const a = sgn(c.d2), b = sgn(c.d1); const pres = (c.d2 != null) + (c.d1 != null), neg = (a < 0) + (b < 0); return neg === 0 && a + b > 0 ? 'verde' : pres && neg === pres ? 'rojo' : 'mixta'; };
   let aest = location.hash === '#revisar' ? 'rojo' : null, aplat = null, aobj = null, aq = '', asort = 'estado';
   $('#act-q').addEventListener('input', (e) => { aq = e.target.value.trim().toLowerCase(); drawActivas(); });
   $('#act-sort').addEventListener('change', (e) => { asort = e.target.value; drawActivas(); });
@@ -1901,7 +1923,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
       const n = el('span', 'n'); const dot = el('i'); dot.style.background = PLATC[pl]; n.append(dot, pl);
       const bar = el('span', 'b');
       for (const k of ['verde', 'mixta', 'rojo']) { if (!r[k]) continue; const sp = el('span', '', String(r[k])); sp.style.flex = r[k]; sp.style.background = STC[k]; sp.title = `${STL[k]}: ${r[k]}`; Object.assign(sp.dataset, { source: 'campSema', field: k, where: 'id=' + r.id }); bar.append(sp); }
-      row.append(n, bar, el('span', 'c', `${r.n} campañas · ${moneyC(r.cost)}`));
+      row.append(n, bar, el('span', 'c', `${r.n} ${r.n === 1 ? 'campaña' : 'campañas'} · ${moneyC(r.cost)}`));
       row.addEventListener('click', () => { aplat = aplat === pl ? null : pl; drawActivas(); });
       ps.append(row);
     }
@@ -1940,6 +1962,8 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
         row.title = 'Ver las piezas de ' + r.base;
         const dot = el('span', 'dot'); dot.style.background = STC[s.st];
         const pl = el('span', 'pl'); const pt = el('span', 'pz-ptag'); const pd = el('i'); pd.style.background = PLATC[r.plat]; pt.append(pd, r.plat); pl.append(pt, objTag(r.obj));
+        if (x.subs.filter((y) => y.r.plat === r.plat && y.r.obj === r.obj).length > 1) { const sb = el('small', 'pz-subio', String(r.base).replace(/^(IO_|BG_)+/, '').replace(/_/g, ' ')); sb.title = r.base; pl.append(sb); }
+        if (r.rf) pl.append(el('small', 'pz-subio', 'R&F'));
         const vals = el('span', 'vals');
         const l1 = el('span'); const v1 = el('b', '', fmtK(r.k2, r.k2v)); Object.assign(v1.dataset, { source: 'campanas_base', field: 'k2v', where: 'id=' + r.id }); l1.append(el('small', '', r.k2 === 'Interacción' ? 'INT.' : r.k2), v1, badge(r.d2, r.k2b, r.k2));
         const l2 = el('span'); const v2 = el('b', '', fmtK(r.k1, r.k1v)); Object.assign(v2.dataset, { source: 'campanas_base', field: 'k1v', where: 'id=' + r.id }); l2.append(el('small', '', r.k1), v2, badge(r.d1, r.k1b, r.k1));
@@ -1951,7 +1975,7 @@ dash.calc("campSema", { inputs: ["campanias"], title: "Semáforo de campañas", 
       const fl = el('div', 'pz-chist-h');
       if (npz) {
         const sv = el('b', '', String(Math.round(avg))); sv.style.color = TIER(avg)[0];
-        fl.append(el('span', '', `Score de sus ${npz} ${npz === 1 ? 'pieza' : 'piezas'}`), (() => { const r2 = el('span'); r2.append('promedio ', sv); return r2; })());
+        fl.append(el('span', '', npz === 1 ? 'Score de su única pieza' : `Score de sus ${npz} piezas`), (() => { const r2 = el('span'); r2.append('promedio ', sv); return r2; })());
         const bins = d3.range(20).map((i) => d3.sum(pz, (y) => (y.bins || [])[i] || 0));
         const mx = d3.max(bins) || 1, W = 300, H = 46;
         const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H + 12}`).attr('width', '100%').attr('class', 'pz-chist');
